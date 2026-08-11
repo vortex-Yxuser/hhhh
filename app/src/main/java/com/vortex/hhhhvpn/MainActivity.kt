@@ -33,13 +33,15 @@ class MainActivity : AppCompatActivity() {
 
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
 
+    private val PROXY_IP = "34.43.46.91"
+    private val PROXY_PORT = "443"
+
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val message = intent?.getStringExtra("log_msg") ?: return
             runOnUiThread {
                 val ts = timeFmt.format(Date())
                 tvLogs.append("\n[$ts] $message")
-                // Auto scroll to bottom - stable way
                 tvLogs.post {
                     val layout = tvLogs.layout ?: return@post
                     val scroll = layout.getLineTop(tvLogs.lineCount) - tvLogs.height
@@ -53,7 +55,8 @@ class MainActivity : AppCompatActivity() {
                         btnConnect.isEnabled = false
                         btnDisconnect.isEnabled = true
                     }
-                    message.contains("failed") || message.contains("✗") || message.contains("Stopped") || message.contains("disconnected") -> {
+                    message.contains("failed") || message.contains("✗") || message.contains("Stopped") ||
+                    message.contains("disconnected") || message.contains("revoked") || message.contains("Fatal") -> {
                         tvStatus.text = "○ Disconnected"
                         tvStatus.setTextColor(0xFFEF5350.toInt())
                         btnConnect.isEnabled = true
@@ -96,37 +99,45 @@ class MainActivity : AppCompatActivity() {
 
         tvLogs.movementMethod = ScrollingMovementMethod()
 
-        // Load saved
         val cfg = Prefs.load(this)
         etHost.setText(cfg.sshHost)
         etPort.setText(cfg.sshPort.toString())
         etUser.setText(cfg.sshUser)
         etPass.setText(cfg.sshPass)
         etPayload.setText(cfg.payload)
-        etProxyHost.setText(cfg.proxyHost)
-        etProxyPort.setText(cfg.proxyPort.toString())
-        cbProxy.isChecked = cfg.proxyEnabled
+        etProxyHost.setText(if (cfg.proxyHost.isNotBlank()) cfg.proxyHost else PROXY_IP)
+        etProxyPort.setText(if (cfg.proxyPort > 0) cfg.proxyPort.toString() else PROXY_PORT)
+        cbProxy.isChecked = cfg.proxyEnabled || true
 
-        // Presets
+        // Exact presets requested by user
         val presets = arrayOf(
-            "Custom / Manual",
-            "Snapchat style",
-            "YouTube style",
-            "Generic Upgrade",
-            "Fast minimal"
+            "YouTube (recommended)",
+            "Snapchat",
+            "Custom / Manual"
         )
         spPreset.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, presets)
         spPreset.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, pos: Int, id: Long) {
                 when (pos) {
-                    1 -> etPayload.setText("CONNECT [host_port] HTTP/1.1[crlf]Host: api.snapchat.com[crlf]Connection: Keep-Alive[crlf][crlf]")
-                    2 -> etPayload.setText("CONNECT [host_port] HTTP/1.1[crlf]Host: youtube.com[crlf]Connection: Keep-Alive[crlf][crlf]")
-                    3 -> etPayload.setText("GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]User-Agent: Mozilla/5.0[crlf][crlf]")
-                    4 -> etPayload.setText("GET / HTTP/1.1[crlf]Host: [host][crlf][crlf]")
+                    0 -> { // YouTube
+                        etPayload.setText("CONNECT [host_port] HTTP/1.1[crlf]Host: youtube.com[crlf][crlf]")
+                        etProxyHost.setText(PROXY_IP)
+                        etProxyPort.setText(PROXY_PORT)
+                        cbProxy.isChecked = true
+                    }
+                    1 -> { // Snapchat
+                        etPayload.setText("CONNECT [host_port] HTTP/1.1[crlf]Host: api.Snapchat.com[crlf][crlf]")
+                        etProxyHost.setText(PROXY_IP)
+                        etProxyPort.setText(PROXY_PORT)
+                        cbProxy.isChecked = true
+                    }
+                    // 2 = Custom - leave as is
                 }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+        // Default to YouTube
+        spPreset.setSelection(0)
 
         tvStatus.text = if (MyVpnService.isRunning) "● CONNECTED" else "○ Disconnected"
         btnConnect.isEnabled = !MyVpnService.isRunning
@@ -149,7 +160,9 @@ class MainActivity : AppCompatActivity() {
             registerReceiver(logReceiver, filter)
         }
 
-        appendLocalLog("HHHH SSH VPN Pro v2.0 ready — optimized for speed & stable logs")
+        appendLocalLog("HHHH SSH VPN Pro v2.1 ready")
+        appendLocalLog("Enter your SSH account below (Host / User / Password)")
+        appendLocalLog("Presets auto-fill Payload + Proxy 34.43.46.91:443")
     }
 
     private fun appendLocalLog(msg: String) {
@@ -164,10 +177,10 @@ class MainActivity : AppCompatActivity() {
             sshPort = etPort.text.toString().trim().toIntOrNull() ?: 22,
             sshUser = etUser.text.toString().trim(),
             sshPass = etPass.text.toString(),
-            payload = payload.ifBlank { Prefs.defaultPayload() },
+            payload = payload.ifBlank { "CONNECT [host_port] HTTP/1.1[crlf]Host: youtube.com[crlf][crlf]" },
             proxyEnabled = cbProxy.isChecked,
-            proxyHost = etProxyHost.text.toString().trim(),
-            proxyPort = etProxyPort.text.toString().trim().toIntOrNull() ?: 8080,
+            proxyHost = etProxyHost.text.toString().trim().ifBlank { PROXY_IP },
+            proxyPort = etProxyPort.text.toString().trim().toIntOrNull() ?: 443,
             localSocksPort = 1080,
             connectTimeoutMs = 25000,
             enableTcpNoDelay = true,
@@ -175,7 +188,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         if (config.sshHost.isBlank() || config.sshUser.isBlank()) {
-            Toast.makeText(this, "Please enter SSH Host and Username", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "أدخل بيانات حساب SSH (Host + Username)", Toast.LENGTH_SHORT).show()
             return
         }
 

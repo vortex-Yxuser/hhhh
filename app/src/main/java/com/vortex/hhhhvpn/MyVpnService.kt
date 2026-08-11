@@ -81,9 +81,10 @@ class MyVpnService : VpnService() {
                     .setMtu(config.mtu)
                     .setBlocking(true)
 
-                // Exclude our own process from VPN to avoid loops (extra safety)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    builder.addDisallowedApplication(packageName)
+                    try {
+                        builder.addDisallowedApplication(packageName)
+                    } catch (_: Exception) {}
                 }
 
                 tunInterface = builder.establish()
@@ -94,25 +95,34 @@ class MyVpnService : VpnService() {
                 }
                 sendLog("✓ TUN interface ready (fd=${tunInterface!!.fd})")
 
-                // 4. tun2socks YAML (optimized)
+                // 4. Write config for hev-socks5-tunnel
                 val yaml = File(filesDir, "tun2socks.yaml")
                 yaml.writeText(
                     """
                     tunnel:
                       mtu: ${config.mtu}
-                      multi-queue: true
                     socks5:
                       address: 127.0.0.1
                       port: ${config.localSocksPort}
                       udp: 'udp'
                     misc:
-                      task-stack-size: 86016
+                      task-stack-size: 81920
                     """.trimIndent()
                 )
+                sendLog("→ Starting tun2socks engine...")
 
-                val started = TProxyService.TProxyStartService(yaml.absolutePath, tunInterface!!.fd)
+                // Catch Error (UnsatisfiedLinkError) as well as Exception
+                var started = false
+                try {
+                    started = TProxyService.TProxyStartService(yaml.absolutePath, tunInterface!!.fd)
+                } catch (t: Throwable) {
+                    sendLog("✗ Native error: ${t.javaClass.simpleName}: ${t.message?.take(80)}")
+                    stopTunnel("Native crash prevented")
+                    return@Thread
+                }
+
                 if (!started) {
-                    sendLog("✗ tun2socks engine failed to start")
+                    sendLog("✗ tun2socks returned false")
                     stopTunnel("tun2socks failed")
                     return@Thread
                 }
@@ -126,6 +136,9 @@ class MyVpnService : VpnService() {
                 sendLog(msg)
                 updateNotification(msg)
                 stopTunnel(msg)
+            } catch (t: Throwable) {
+                sendLog("✗ Fatal: ${t.javaClass.simpleName}")
+                stopTunnel("Fatal error")
             }
         }, "HHHH-VPN-Worker").apply {
             isDaemon = false
@@ -139,7 +152,7 @@ class MyVpnService : VpnService() {
         isRunning = false
         sendLog("○ $reason")
 
-        try { TProxyService.TProxyStopService() } catch (_: Exception) {}
+        try { TProxyService.TProxyStopService() } catch (_: Throwable) {}
         try { tunnelManager?.disconnect() } catch (_: Exception) {}
         try { tunInterface?.close() } catch (_: Exception) {}
 
@@ -147,7 +160,9 @@ class MyVpnService : VpnService() {
         tunnelManager = null
         workerThread = null
 
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {}
         stopSelf()
         stopping.set(false)
     }
