@@ -8,9 +8,12 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.text.method.ScrollingMovementMethod
+import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.button.MaterialButton
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -22,22 +25,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etPass: EditText
     private lateinit var tvStatus: TextView
     private lateinit var tvLogs: TextView
-    private lateinit var btnConnect: Button
-    private lateinit var btnDisconnect: Button
+    private lateinit var btnToggle: MaterialButton
     private lateinit var btnClearLog: Button
     private lateinit var spPreset: Spinner
+    private lateinit var logsPanel: View
+    private lateinit var bottomSheetBehavior: BottomSheetBehavior<View>
 
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
 
-    // Internal only - never shown in UI
     private val PROXY_HOST = "34.43.46.91"
     private val PROXY_PORT = 443
-
     private val PAYLOAD_YOUTUBE =
         "CONNECT [host_port] HTTP/1.1[crlf]Host: youtube.com[crlf][crlf]"
     private val PAYLOAD_SNAPCHAT =
         "CONNECT [host_port] HTTP/1.1[crlf]Host: api.Snapchat.com[crlf][crlf]"
 
+    private var isConnected = false
     private var hasShownConnectAd = false
 
     private val logReceiver = object : BroadcastReceiver() {
@@ -45,7 +48,7 @@ class MainActivity : AppCompatActivity() {
             val message = intent?.getStringExtra("log_msg") ?: return
             runOnUiThread {
                 val ts = timeFmt.format(Date())
-                tvLogs.append("\n[$ts] $message")
+                tvLogs.append("[$ts] $message\n")
                 tvLogs.post {
                     val layout = tvLogs.layout ?: return@post
                     val scroll = layout.getLineTop(tvLogs.lineCount) - tvLogs.height
@@ -53,29 +56,20 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 when {
-                    message.contains("Fully connected") || message.contains("✅") -> {
-                        tvStatus.text = "● CONNECTED"
-                        tvStatus.setTextColor(0xFF4CAF50.toInt())
-                        btnConnect.isEnabled = false
-                        btnDisconnect.isEnabled = true
-
-                        // Show Interstitial Ad after successful connection
+                    message.contains("Fully connected") || message.contains("✅") ||
+                    message.contains("Connected") && message.contains("Auth complete").not() -> {
+                        setConnectedState(true)
                         if (!hasShownConnectAd) {
                             hasShownConnectAd = true
-                            AdManager.showInterstitialIfAvailable(this@MainActivity) {
-                                // ad closed or failed – nothing extra needed
-                            }
+                            AdManager.showInterstitialIfAvailable(this@MainActivity)
                         }
                     }
                     message.contains("failed") || message.contains("✗") ||
                     message.contains("Stopped") || message.contains("disconnected") ||
                     message.contains("revoked") || message.contains("Fatal") ||
-                    message.contains("Service destroyed") -> {
-                        tvStatus.text = "○ Disconnected"
-                        tvStatus.setTextColor(0xFFEF5350.toInt())
-                        btnConnect.isEnabled = true
-                        btnDisconnect.isEnabled = false
-                        hasShownConnectAd = false // allow ad again on next successful connect
+                    message.contains("Service destroyed") || message.contains("SSH session closed") -> {
+                        setConnectedState(false)
+                        hasShownConnectAd = false
                     }
                 }
             }
@@ -86,10 +80,10 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            startVpnService()
+            reallyStartVpn()
         } else {
-            tvStatus.text = "VPN permission denied"
-            appendLocalLog("User denied VPN permission")
+            appendLog("User denied VPN permission")
+            setConnectedState(false)
         }
     }
 
@@ -103,45 +97,47 @@ class MainActivity : AppCompatActivity() {
         etPass = findViewById(R.id.etPass)
         tvStatus = findViewById(R.id.tvStatus)
         tvLogs = findViewById(R.id.tvLogs)
-        btnConnect = findViewById(R.id.btnConnect)
-        btnDisconnect = findViewById(R.id.btnDisconnect)
+        btnToggle = findViewById(R.id.btnToggle)
         btnClearLog = findViewById(R.id.btnClearLog)
         spPreset = findViewById(R.id.spPreset)
+        logsPanel = findViewById(R.id.logsPanel)
 
         tvLogs.movementMethod = ScrollingMovementMethod()
 
-        // Load saved SSH only
+        // Bottom sheet for logs
+        bottomSheetBehavior = BottomSheetBehavior.from(logsPanel)
+        bottomSheetBehavior.state = BottomSheetBehavior.STATE_COLLAPSED
+        bottomSheetBehavior.isDraggable = true
+
+        // Load saved
         val cfg = Prefs.load(this)
         etHost.setText(cfg.sshHost)
         etPort.setText(cfg.sshPort.toString())
         etUser.setText(cfg.sshUser)
         etPass.setText(cfg.sshPass)
 
-        // Mode selector
         val modes = arrayOf("YouTube", "Snapchat")
         spPreset.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
-        if (cfg.payload.contains("Snapchat", ignoreCase = true)) {
-            spPreset.setSelection(1)
-        } else {
-            spPreset.setSelection(0)
+        spPreset.setSelection(if (cfg.payload.contains("Snapchat", true)) 1 else 0)
+
+        isConnected = MyVpnService.isRunning
+        setConnectedState(isConnected)
+
+        btnToggle.setOnClickListener {
+            if (isConnected) {
+                // Disconnect
+                startService(Intent(this, MyVpnService::class.java).apply {
+                    action = MyVpnService.ACTION_DISCONNECT
+                })
+                setConnectedState(false)
+            } else {
+                onConnectClicked()
+            }
         }
 
-        tvStatus.text = if (MyVpnService.isRunning) "● CONNECTED" else "○ Disconnected"
-        if (MyVpnService.isRunning) {
-            tvStatus.setTextColor(0xFF4CAF50.toInt())
-        }
-        btnConnect.isEnabled = !MyVpnService.isRunning
-        btnDisconnect.isEnabled = MyVpnService.isRunning
-
-        btnConnect.setOnClickListener { onConnectClicked() }
-        btnDisconnect.setOnClickListener {
-            startService(Intent(this, MyVpnService::class.java).apply {
-                action = MyVpnService.ACTION_DISCONNECT
-            })
-        }
         btnClearLog.setOnClickListener {
             tvLogs.text = ""
-            appendLocalLog("Logs cleared")
+            appendLog("Logs cleared")
         }
 
         val filter = IntentFilter(MyVpnService.ACTION_LOG)
@@ -151,25 +147,40 @@ class MainActivity : AppCompatActivity() {
             registerReceiver(logReceiver, filter)
         }
 
-        // Preload ads
         AdManager.loadAppOpenAd(this)
         AdManager.loadInterstitial(this)
 
-        appendLocalLog("Yohan VPN ready")
-        appendLocalLog("Enter SSH account then press CONNECT")
+        appendLog("Yohan VPN ready")
+        appendLog("Enter SSH account then press CONNECT")
     }
 
     override fun onResume() {
         super.onResume()
-        // Show App Open Ad when user opens / returns to the app
         if (!YohanApp.instance.isShowingAd()) {
             AdManager.showAppOpenAdIfAvailable(this)
         }
     }
 
-    private fun appendLocalLog(msg: String) {
+    private fun setConnectedState(connected: Boolean) {
+        isConnected = connected
+        if (connected) {
+            tvStatus.text = "Connected"
+            tvStatus.setTextColor(0xFF4CAF50.toInt())
+            tvStatus.setBackgroundResource(R.drawable.status_pill_connected)
+            btnToggle.text = "DISCONNECT"
+            btnToggle.setBackgroundColor(0xFFC62828.toInt())
+        } else {
+            tvStatus.text = "Disconnected"
+            tvStatus.setTextColor(0xFFEF5350.toInt())
+            tvStatus.setBackgroundResource(R.drawable.status_pill_disconnected)
+            btnToggle.text = "CONNECT"
+            btnToggle.setBackgroundColor(0xFF7C4DFF.toInt())
+        }
+    }
+
+    private fun appendLog(msg: String) {
         val ts = timeFmt.format(Date())
-        tvLogs.append("\n[$ts] $msg")
+        tvLogs.append("[$ts] $msg\n")
     }
 
     private fun onConnectClicked() {
@@ -197,21 +208,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         Prefs.save(this, config)
-        appendLocalLog("Connecting with ${if (isSnapchat) "Snapchat" else "YouTube"} mode...")
+        appendLog("Connecting with ${if (isSnapchat) "Snapchat" else "YouTube"} mode...")
 
         val intent = VpnService.prepare(this)
         if (intent != null) {
             vpnPrepareLauncher.launch(intent)
         } else {
-            startVpnService()
+            reallyStartVpn()
         }
     }
 
-    private fun startVpnService() {
+    private fun reallyStartVpn() {
+        setConnectedState(false) // temporary, will become true on success
         tvStatus.text = "Connecting..."
-        tvStatus.setTextColor(0xFFFFC107.toInt())
-        btnConnect.isEnabled = false
+        btnToggle.isEnabled = false
         hasShownConnectAd = false
+
         val intent = Intent(this, MyVpnService::class.java).apply {
             action = MyVpnService.ACTION_CONNECT
         }
@@ -220,6 +232,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             startService(intent)
         }
+        btnToggle.postDelayed({ btnToggle.isEnabled = true }, 1500)
     }
 
     override fun onDestroy() {

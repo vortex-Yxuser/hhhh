@@ -128,7 +128,7 @@ class MyVpnService : VpnService() {
                 }
 
                 isRunning = true
-                sendLog("✅ Fully connected — traffic is now tunneled")
+                sendLog("Connected")
                 updateNotification("Connected")
 
             } catch (e: Exception) {

@@ -8,11 +8,6 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketException
 
-/**
- * High-performance Payload Socket Factory.
- * Optimized for speed (TCP_NODELAY, larger buffers, minimal blocking)
- * and stability (proper timeouts, protect(), clean error handling).
- */
 class PayloadSocketFactory(
     private val config: TunnelConfig,
     private val vpnService: VpnService? = null,
@@ -26,73 +21,63 @@ class PayloadSocketFactory(
         if (config.proxyEnabled && config.proxyHost.isNotBlank()) {
             targetHost = config.proxyHost
             targetPort = config.proxyPort
-            onLog("→ Connecting via proxy $targetHost:$targetPort")
+            onLog("Connecting to proxy $targetHost port $targetPort")
         } else {
             targetHost = host ?: config.sshHost
             targetPort = port
-            onLog("→ Direct TCP to $targetHost:$targetPort")
+            onLog("Direct TCP to $targetHost:$targetPort")
         }
 
         val socket = Socket()
         try {
-            // Speed optimizations
-            if (config.enableTcpNoDelay) {
-                socket.tcpNoDelay = true
-            }
+            if (config.enableTcpNoDelay) socket.tcpNoDelay = true
             socket.receiveBufferSize = 256 * 1024
             socket.sendBufferSize = 256 * 1024
             socket.keepAlive = true
-            socket.soTimeout = 0 // will set temporarily later
 
             val timeout = config.connectTimeoutMs.coerceIn(8000, 45000)
             socket.connect(InetSocketAddress(targetHost, targetPort), timeout)
 
-            // Critical: protect socket from VPN loop
             vpnService?.let {
                 if (it.protect(socket)) {
-                    onLog("✓ Socket protected (no routing loop)")
-                } else {
-                    onLog("⚠ protect() returned false — possible loop risk")
+                    onLog("Socket protected (no routing loop)")
                 }
             }
 
-            onLog("✓ TCP connected in ${System.currentTimeMillis() % 10000}ms window")
-
-            // Send payload if present
             if (config.payload.isNotBlank()) {
                 val finalPayload = applyPlaceholders(config.payload, host ?: config.sshHost, port)
                 val bytes = finalPayload.toByteArray(Charsets.ISO_8859_1)
+                onLog("Sending Payload: ${finalPayload.replace("\r\n", "[crlf]")}")
                 socket.getOutputStream().write(bytes)
                 socket.getOutputStream().flush()
-                onLog("→ Payload sent (${bytes.size} bytes)")
 
-                // Fast discard of any early HTTP response (non-blocking style)
-                discardEarlyResponse(socket)
+                // Read and show proxy response (like DarkTunnel)
+                try {
+                    socket.soTimeout = 2500
+                    val buf = ByteArray(1024)
+                    val n = socket.getInputStream().read(buf)
+                    if (n > 0) {
+                        val response = String(buf, 0, n, Charsets.ISO_8859_1)
+                            .lineSequence()
+                            .firstOrNull()
+                            ?.trim()
+                            ?: ""
+                        if (response.isNotBlank()) {
+                            onLog("Response: $response")
+                        }
+                    }
+                } catch (_: Exception) {
+                    // no response is ok for some proxies
+                } finally {
+                    try { socket.soTimeout = 0 } catch (_: Exception) {}
+                }
             }
         } catch (e: Exception) {
             try { socket.close() } catch (_: Exception) {}
-            throw SocketException("PayloadSocket failed: ${e.message}")
+            throw SocketException("Connection failed: ${e.message}")
         }
 
         return socket
-    }
-
-    private fun discardEarlyResponse(socket: Socket) {
-        try {
-            socket.soTimeout = 1200 // very short
-            val input = socket.getInputStream()
-            if (input.available() > 0 || Thread.sleep(150).let { input.available() > 0 }) {
-                val buf = ByteArray(8192)
-                val read = input.read(buf)
-                if (read > 0) {
-                    onLog("↷ Discarded early response ($read bytes)")
-                }
-            }
-        } catch (_: Exception) {
-            // Expected — many servers send nothing
-        } finally {
-            try { socket.soTimeout = 0 } catch (_: Exception) {}
-        }
     }
 
     override fun getInputStream(socket: Socket): InputStream = socket.getInputStream()

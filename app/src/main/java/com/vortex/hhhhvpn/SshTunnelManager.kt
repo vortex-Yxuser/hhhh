@@ -5,9 +5,6 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import java.util.Properties
 
-/**
- * Stable & faster SSH tunnel manager using modern JSch fork.
- */
 class SshTunnelManager(
     private val config: TunnelConfig,
     private val vpnService: VpnService? = null,
@@ -23,11 +20,9 @@ class SshTunnelManager(
         s.setPassword(config.sshPass)
         s.setSocketFactory(PayloadSocketFactory(config, vpnService, onLog))
 
-        // Optimized config for speed + compatibility with modern servers
         val props = Properties().apply {
             put("StrictHostKeyChecking", "no")
             put("PreferredAuthentications", "password,publickey,keyboard-interactive")
-            // Faster modern algorithms preferred first
             put("kex", "curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1")
             put("server_host_key", "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa,ssh-dss")
             put("cipher.c2s", "aes128-gcm@openssh.com,aes256-gcm@openssh.com,chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr")
@@ -40,11 +35,21 @@ class SshTunnelManager(
         s.setConfig(props)
         s.timeout = config.connectTimeoutMs
 
-        onLog("→ SSH handshake to ${config.sshHost}:${config.sshPort} ...")
+        onLog("SSH handshake to ${config.sshHost}:${config.sshPort} ...")
         val start = System.currentTimeMillis()
         s.connect(config.connectTimeoutMs)
         val took = System.currentTimeMillis() - start
-        onLog("✓ SSH connected in ${took}ms")
+
+        // Try to log server version
+        try {
+            val ver = s.serverVersion
+            if (!ver.isNullOrBlank()) {
+                onLog("SSH Version: $ver")
+            }
+        } catch (_: Exception) {}
+
+        onLog("Auth complete")
+        onLog("SSH connected in ${took}ms")
         session = s
         return s
     }
@@ -55,7 +60,7 @@ class SshTunnelManager(
         val server = Socks5Server(s, config.localSocksPort, onLog)
         server.start()
         socksServer = server
-        onLog("✓ Local SOCKS5 ready on 127.0.0.1:${config.localSocksPort}")
+        onLog("Local SOCKS5 ready on 127.0.0.1:${config.localSocksPort}")
         return server
     }
 
@@ -64,7 +69,7 @@ class SshTunnelManager(
         try { session?.disconnect() } catch (_: Exception) {}
         socksServer = null
         session = null
-        onLog("○ SSH session closed")
+        onLog("SSH session closed")
     }
 
     fun isConnected(): Boolean = session?.isConnected == true
