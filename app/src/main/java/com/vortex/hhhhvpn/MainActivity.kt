@@ -38,6 +38,8 @@ class MainActivity : AppCompatActivity() {
     private val PAYLOAD_SNAPCHAT =
         "CONNECT [host_port] HTTP/1.1[crlf]Host: api.Snapchat.com[crlf][crlf]"
 
+    private var hasShownConnectAd = false
+
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val message = intent?.getStringExtra("log_msg") ?: return
@@ -56,6 +58,14 @@ class MainActivity : AppCompatActivity() {
                         tvStatus.setTextColor(0xFF4CAF50.toInt())
                         btnConnect.isEnabled = false
                         btnDisconnect.isEnabled = true
+
+                        // Show Interstitial Ad after successful connection
+                        if (!hasShownConnectAd) {
+                            hasShownConnectAd = true
+                            AdManager.showInterstitialIfAvailable(this@MainActivity) {
+                                // ad closed or failed – nothing extra needed
+                            }
+                        }
                     }
                     message.contains("failed") || message.contains("✗") ||
                     message.contains("Stopped") || message.contains("disconnected") ||
@@ -65,6 +75,7 @@ class MainActivity : AppCompatActivity() {
                         tvStatus.setTextColor(0xFFEF5350.toInt())
                         btnConnect.isEnabled = true
                         btnDisconnect.isEnabled = false
+                        hasShownConnectAd = false // allow ad again on next successful connect
                     }
                 }
             }
@@ -106,11 +117,9 @@ class MainActivity : AppCompatActivity() {
         etUser.setText(cfg.sshUser)
         etPass.setText(cfg.sshPass)
 
-        // Mode selector (YouTube / Snapchat only)
+        // Mode selector
         val modes = arrayOf("YouTube", "Snapchat")
         spPreset.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
-
-        // Restore last mode if possible
         if (cfg.payload.contains("Snapchat", ignoreCase = true)) {
             spPreset.setSelection(1)
         } else {
@@ -142,8 +151,20 @@ class MainActivity : AppCompatActivity() {
             registerReceiver(logReceiver, filter)
         }
 
+        // Preload ads
+        AdManager.loadAppOpenAd(this)
+        AdManager.loadInterstitial(this)
+
         appendLocalLog("Yohan VPN ready")
         appendLocalLog("Enter SSH account then press CONNECT")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Show App Open Ad when user opens / returns to the app
+        if (!YohanApp.instance.isShowingAd()) {
+            AdManager.showAppOpenAdIfAvailable(this)
+        }
     }
 
     private fun appendLocalLog(msg: String) {
@@ -190,6 +211,7 @@ class MainActivity : AppCompatActivity() {
         tvStatus.text = "Connecting..."
         tvStatus.setTextColor(0xFFFFC107.toInt())
         btnConnect.isEnabled = false
+        hasShownConnectAd = false
         val intent = Intent(this, MyVpnService::class.java).apply {
             action = MyVpnService.ACTION_CONNECT
         }
