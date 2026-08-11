@@ -20,10 +20,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etPort: EditText
     private lateinit var etUser: EditText
     private lateinit var etPass: EditText
-    private lateinit var etPayload: EditText
-    private lateinit var etProxyHost: EditText
-    private lateinit var etProxyPort: EditText
-    private lateinit var cbProxy: CheckBox
     private lateinit var tvStatus: TextView
     private lateinit var tvLogs: TextView
     private lateinit var btnConnect: Button
@@ -33,8 +29,14 @@ class MainActivity : AppCompatActivity() {
 
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
 
-    private val PROXY_IP = "34.43.46.91"
-    private val PROXY_PORT = "443"
+    // Internal only - never shown in UI
+    private val PROXY_HOST = "34.43.46.91"
+    private val PROXY_PORT = 443
+
+    private val PAYLOAD_YOUTUBE =
+        "CONNECT [host_port] HTTP/1.1[crlf]Host: youtube.com[crlf][crlf]"
+    private val PAYLOAD_SNAPCHAT =
+        "CONNECT [host_port] HTTP/1.1[crlf]Host: api.Snapchat.com[crlf][crlf]"
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -55,8 +57,10 @@ class MainActivity : AppCompatActivity() {
                         btnConnect.isEnabled = false
                         btnDisconnect.isEnabled = true
                     }
-                    message.contains("failed") || message.contains("✗") || message.contains("Stopped") ||
-                    message.contains("disconnected") || message.contains("revoked") || message.contains("Fatal") -> {
+                    message.contains("failed") || message.contains("✗") ||
+                    message.contains("Stopped") || message.contains("disconnected") ||
+                    message.contains("revoked") || message.contains("Fatal") ||
+                    message.contains("Service destroyed") -> {
                         tvStatus.text = "○ Disconnected"
                         tvStatus.setTextColor(0xFFEF5350.toInt())
                         btnConnect.isEnabled = true
@@ -86,10 +90,6 @@ class MainActivity : AppCompatActivity() {
         etPort = findViewById(R.id.etPort)
         etUser = findViewById(R.id.etUser)
         etPass = findViewById(R.id.etPass)
-        etPayload = findViewById(R.id.etPayload)
-        etProxyHost = findViewById(R.id.etProxyHost)
-        etProxyPort = findViewById(R.id.etProxyPort)
-        cbProxy = findViewById(R.id.cbProxy)
         tvStatus = findViewById(R.id.tvStatus)
         tvLogs = findViewById(R.id.tvLogs)
         btnConnect = findViewById(R.id.btnConnect)
@@ -99,47 +99,28 @@ class MainActivity : AppCompatActivity() {
 
         tvLogs.movementMethod = ScrollingMovementMethod()
 
+        // Load saved SSH only
         val cfg = Prefs.load(this)
         etHost.setText(cfg.sshHost)
         etPort.setText(cfg.sshPort.toString())
         etUser.setText(cfg.sshUser)
         etPass.setText(cfg.sshPass)
-        etPayload.setText(cfg.payload)
-        etProxyHost.setText(if (cfg.proxyHost.isNotBlank()) cfg.proxyHost else PROXY_IP)
-        etProxyPort.setText(if (cfg.proxyPort > 0) cfg.proxyPort.toString() else PROXY_PORT)
-        cbProxy.isChecked = cfg.proxyEnabled || true
 
-        // Exact presets requested by user
-        val presets = arrayOf(
-            "YouTube (recommended)",
-            "Snapchat",
-            "Custom / Manual"
-        )
-        spPreset.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, presets)
-        spPreset.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, pos: Int, id: Long) {
-                when (pos) {
-                    0 -> { // YouTube
-                        etPayload.setText("CONNECT [host_port] HTTP/1.1[crlf]Host: youtube.com[crlf][crlf]")
-                        etProxyHost.setText(PROXY_IP)
-                        etProxyPort.setText(PROXY_PORT)
-                        cbProxy.isChecked = true
-                    }
-                    1 -> { // Snapchat
-                        etPayload.setText("CONNECT [host_port] HTTP/1.1[crlf]Host: api.Snapchat.com[crlf][crlf]")
-                        etProxyHost.setText(PROXY_IP)
-                        etProxyPort.setText(PROXY_PORT)
-                        cbProxy.isChecked = true
-                    }
-                    // 2 = Custom - leave as is
-                }
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        // Mode selector (YouTube / Snapchat only)
+        val modes = arrayOf("YouTube", "Snapchat")
+        spPreset.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
+
+        // Restore last mode if possible
+        if (cfg.payload.contains("Snapchat", ignoreCase = true)) {
+            spPreset.setSelection(1)
+        } else {
+            spPreset.setSelection(0)
         }
-        // Default to YouTube
-        spPreset.setSelection(0)
 
         tvStatus.text = if (MyVpnService.isRunning) "● CONNECTED" else "○ Disconnected"
+        if (MyVpnService.isRunning) {
+            tvStatus.setTextColor(0xFF4CAF50.toInt())
+        }
         btnConnect.isEnabled = !MyVpnService.isRunning
         btnDisconnect.isEnabled = MyVpnService.isRunning
 
@@ -150,7 +131,8 @@ class MainActivity : AppCompatActivity() {
             })
         }
         btnClearLog.setOnClickListener {
-            tvLogs.text = "Logs cleared"
+            tvLogs.text = ""
+            appendLocalLog("Logs cleared")
         }
 
         val filter = IntentFilter(MyVpnService.ACTION_LOG)
@@ -160,9 +142,8 @@ class MainActivity : AppCompatActivity() {
             registerReceiver(logReceiver, filter)
         }
 
-        appendLocalLog("HHHH SSH VPN Pro v2.1 ready")
-        appendLocalLog("Enter your SSH account below (Host / User / Password)")
-        appendLocalLog("Presets auto-fill Payload + Proxy 34.43.46.91:443")
+        appendLocalLog("Yohan VPN ready")
+        appendLocalLog("Enter SSH account then press CONNECT")
     }
 
     private fun appendLocalLog(msg: String) {
@@ -171,16 +152,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onConnectClicked() {
-        val payload = etPayload.text.toString().trim()
+        val isSnapchat = spPreset.selectedItemPosition == 1
+        val payload = if (isSnapchat) PAYLOAD_SNAPCHAT else PAYLOAD_YOUTUBE
+
         val config = TunnelConfig(
             sshHost = etHost.text.toString().trim(),
             sshPort = etPort.text.toString().trim().toIntOrNull() ?: 22,
             sshUser = etUser.text.toString().trim(),
             sshPass = etPass.text.toString(),
-            payload = payload.ifBlank { "CONNECT [host_port] HTTP/1.1[crlf]Host: youtube.com[crlf][crlf]" },
-            proxyEnabled = cbProxy.isChecked,
-            proxyHost = etProxyHost.text.toString().trim().ifBlank { PROXY_IP },
-            proxyPort = etProxyPort.text.toString().trim().toIntOrNull() ?: 443,
+            payload = payload,
+            proxyEnabled = true,
+            proxyHost = PROXY_HOST,
+            proxyPort = PROXY_PORT,
             localSocksPort = 1080,
             connectTimeoutMs = 25000,
             enableTcpNoDelay = true,
@@ -188,12 +171,12 @@ class MainActivity : AppCompatActivity() {
         )
 
         if (config.sshHost.isBlank() || config.sshUser.isBlank()) {
-            Toast.makeText(this, "أدخل بيانات حساب SSH (Host + Username)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Enter SSH Host and Username", Toast.LENGTH_SHORT).show()
             return
         }
 
         Prefs.save(this, config)
-        appendLocalLog("Config saved. Preparing VPN...")
+        appendLocalLog("Connecting with ${if (isSnapchat) "Snapchat" else "YouTube"} mode...")
 
         val intent = VpnService.prepare(this)
         if (intent != null) {

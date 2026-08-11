@@ -58,7 +58,7 @@ class MyVpnService : VpnService() {
 
         workerThread = Thread({
             try {
-                sendLog("▶ Starting HHHH Pro connection...")
+                sendLog("▶ Starting Yohan VPN connection...")
                 val manager = SshTunnelManager(config, this) { log ->
                     updateNotification(log.take(60))
                     sendLog(log)
@@ -73,7 +73,7 @@ class MyVpnService : VpnService() {
 
                 // 3. TUN interface
                 val builder = Builder()
-                    .setSession("HHHH-SSH-VPN-Pro")
+                    .setSession("Yohan-VPN")
                     .addAddress("10.8.0.2", 32)
                     .addRoute("0.0.0.0", 0)
                     .addDnsServer("1.1.1.1")
@@ -129,7 +129,7 @@ class MyVpnService : VpnService() {
 
                 isRunning = true
                 sendLog("✅ Fully connected — traffic is now tunneled")
-                updateNotification("Connected • HHHH Pro")
+                updateNotification("Connected")
 
             } catch (e: Exception) {
                 val msg = "✗ Connection failed: ${e.message?.take(120)}"
@@ -140,7 +140,7 @@ class MyVpnService : VpnService() {
                 sendLog("✗ Fatal: ${t.javaClass.simpleName}")
                 stopTunnel("Fatal error")
             }
-        }, "HHHH-VPN-Worker").apply {
+        }, "Yohan-VPN-Worker").apply {
             isDaemon = false
             priority = Thread.MAX_PRIORITY
             start()
@@ -180,7 +180,7 @@ class MyVpnService : VpnService() {
     private fun buildNotification(text: String): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID, "HHHH SSH VPN", NotificationManager.IMPORTANCE_LOW
+                CHANNEL_ID, "Yohan VPN", NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "VPN connection status"
                 setShowBadge(false)
@@ -188,7 +188,7 @@ class MyVpnService : VpnService() {
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("HHHH SSH VPN Pro")
+            .setContentTitle("Yohan VPN")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)

@@ -2,165 +2,144 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0D0D0D"
+    android:background="#0A0A0A"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:gravity="center_horizontal"
+        android:padding="20dp">
 
+        <!-- Title -->
         <TextView
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="HHHH SSH VPN Pro"
+            android:text="Yohan VPN"
             android:textColor="#FFFFFF"
-            android:textSize="22sp"
+            android:textSize="26sp"
             android:textStyle="bold"
-            android:gravity="center"
-            android:paddingBottom="8dp" />
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="4dp" />
 
+        <!-- Status -->
         <TextView
             android:id="@+id/tvStatus"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="○ Disconnected"
             android:textColor="#EF5350"
             android:textSize="16sp"
-            android:gravity="center"
-            android:paddingBottom="12dp" />
+            android:layout_marginBottom="20dp" />
 
-        <!-- SSH Section -->
+        <!-- SSH Card -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="SSH Server"
-            android:textColor="#90CAF9"
+            android:text="SSH Account"
+            android:textColor="#81C784"
             android:textStyle="bold"
-            android:paddingTop="4dp" />
+            android:textSize="14sp"
+            android:layout_marginBottom="6dp" />
 
         <EditText
             android:id="@+id/etHost"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:hint="Host / IP"
             android:inputType="text"
             android:textColor="#FFFFFF"
             android:textColorHint="#666666"
-            android:backgroundTint="#333333" />
+            android:background="#1A1A1A"
+            android:paddingHorizontal="14dp"
+            android:layout_marginBottom="8dp"
+            android:singleLine="true" />
 
         <EditText
             android:id="@+id/etPort"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Port (22)"
+            android:layout_height="48dp"
+            android:hint="Port"
             android:inputType="number"
             android:textColor="#FFFFFF"
             android:textColorHint="#666666"
-            android:backgroundTint="#333333" />
+            android:background="#1A1A1A"
+            android:paddingHorizontal="14dp"
+            android:layout_marginBottom="8dp"
+            android:singleLine="true"
+            android:text="22" />
 
         <EditText
             android:id="@+id/etUser"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:hint="Username"
             android:inputType="text"
             android:textColor="#FFFFFF"
             android:textColorHint="#666666"
-            android:backgroundTint="#333333" />
+            android:background="#1A1A1A"
+            android:paddingHorizontal="14dp"
+            android:layout_marginBottom="8dp"
+            android:singleLine="true" />
 
         <EditText
             android:id="@+id/etPass"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:hint="Password"
             android:inputType="textPassword"
             android:textColor="#FFFFFF"
             android:textColorHint="#666666"
-            android:backgroundTint="#333333" />
+            android:background="#1A1A1A"
+            android:paddingHorizontal="14dp"
+            android:layout_marginBottom="16dp"
+            android:singleLine="true" />
 
-        <!-- Payload -->
+        <!-- Mode -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Payload Preset"
-            android:textColor="#90CAF9"
+            android:text="Mode"
+            android:textColor="#81C784"
             android:textStyle="bold"
-            android:paddingTop="12dp" />
+            android:textSize="14sp"
+            android:layout_marginBottom="6dp" />
 
         <Spinner
             android:id="@+id/spPreset"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:background="#1A1A1A"
-            android:popupBackground="#222222" />
-
-        <EditText
-            android:id="@+id/etPayload"
-            android:layout_width="match_parent"
-            android:layout_height="100dp"
-            android:hint="Payload (use [host] [host_port] [crlf])"
-            android:inputType="textMultiLine"
-            android:gravity="top"
-            android:textColor="#FFFFFF"
-            android:textColorHint="#666666"
-            android:backgroundTint="#333333"
-            android:textSize="12sp" />
-
-        <!-- Proxy -->
-        <CheckBox
-            android:id="@+id/cbProxy"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Use intermediate Proxy"
-            android:textColor="#FFFFFF"
-            android:paddingTop="8dp" />
-
-        <EditText
-            android:id="@+id/etProxyHost"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Proxy Host"
-            android:inputType="text"
-            android:textColor="#FFFFFF"
-            android:textColorHint="#666666"
-            android:backgroundTint="#333333" />
-
-        <EditText
-            android:id="@+id/etProxyPort"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Proxy Port"
-            android:inputType="number"
-            android:textColor="#FFFFFF"
-            android:textColorHint="#666666"
-            android:backgroundTint="#333333" />
+            android:popupBackground="#222222"
+            android:layout_marginBottom="20dp" />
 
         <!-- Buttons -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:paddingTop="16dp">
+            android:layout_marginBottom="12dp">
 
             <Button
                 android:id="@+id/btnConnect"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="52dp"
                 android:layout_weight="1"
                 android:text="CONNECT"
-                android:backgroundTint="#1B5E20"
+                android:textStyle="bold"
+                android:backgroundTint="#2E7D32"
                 android:textColor="#FFFFFF"
                 android:layout_marginEnd="6dp" />
 
             <Button
                 android:id="@+id/btnDisconnect"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="52dp"
                 android:layout_weight="1"
                 android:text="DISCONNECT"
-                android:backgroundTint="#B71C1C"
+                android:textStyle="bold"
+                android:backgroundTint="#C62828"
                 android:textColor="#FFFFFF"
                 android:layout_marginStart="6dp"
                 android:enabled="false" />
@@ -169,29 +148,30 @@
         <Button
             android:id="@+id/btnClearLog"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="40dp"
             android:text="Clear Logs"
             android:backgroundTint="#333333"
             android:textColor="#AAAAAA"
-            android:layout_marginTop="8dp" />
+            android:layout_marginBottom="16dp" />
 
         <!-- Logs -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Live Logs (stable)"
-            android:textColor="#90CAF9"
+            android:text="Live Logs"
+            android:textColor="#81C784"
             android:textStyle="bold"
-            android:paddingTop="12dp" />
+            android:textSize="14sp"
+            android:layout_marginBottom="6dp" />
 
         <TextView
             android:id="@+id/tvLogs"
             android:layout_width="match_parent"
-            android:layout_height="220dp"
+            android:layout_height="200dp"
             android:background="#111111"
             android:textColor="#B0BEC5"
             android:textSize="11sp"
-            android:padding="8dp"
+            android:padding="10dp"
             android:scrollbars="vertical"
             android:fadeScrollbars="false"
             android:fontFamily="monospace" />
