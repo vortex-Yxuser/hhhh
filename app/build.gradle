@@ -12,8 +12,8 @@ android {
         applicationId "com.vortex.hhhhvpn"
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName "2.0.0-pro"
+        versionCode 3
+        versionName "2.1.0-pro"
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
         }
@@ -44,30 +44,44 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
         }
     }
 }
 
-// Auto fetch & build hev-socks5-tunnel (tun2socks) for maximum performance
+// Auto fetch & build hev-socks5-tunnel (tun2socks)
+def tunDir = file("${projectDir}/jni/hev-socks5-tunnel")
+
 tasks.register('fetchTun2socks', Exec) {
-    onlyIf { !file("${projectDir}/jni/hev-socks5-tunnel/Android.mk").exists() }
+    onlyIf { !file("${tunDir}/Android.mk").exists() }
     commandLine 'git', 'clone', '--recursive', '--depth', '1',
             'https://github.com/heiher/hev-socks5-tunnel',
-            "${projectDir}/jni/hev-socks5-tunnel"
+            tunDir.absolutePath
+    outputs.dir(tunDir)
 }
 
 tasks.register('buildTun2socks', Exec) {
     dependsOn 'fetchTun2socks'
+    inputs.dir(tunDir)
+    outputs.dir("${projectDir}/libs")
     doFirst {
         def ndkDir = android.ndkDirectory
-        def ndkBuildExe = new File(ndkDir, System.getenv('OS')?.contains('Windows') ? 'ndk-build.cmd' : 'ndk-build')
-        commandLine "${ndkBuildExe}", '-C', projectDir, "-j${Runtime.runtime.availableProcessors()}"
+        def isWindows = System.getenv('OS')?.toLowerCase()?.contains('windows')
+        def ndkBuildExe = new File(ndkDir, isWindows ? 'ndk-build.cmd' : 'ndk-build')
+        commandLine ndkBuildExe.absolutePath, '-C', projectDir.absolutePath, "-j${Runtime.runtime.availableProcessors()}"
     }
 }
 
-preBuild.dependsOn buildTun2socks
+// Hook after evaluation to avoid configuration mutation issues
+afterEvaluate {
+    tasks.named('preBuild').configure {
+        dependsOn 'buildTun2socks'
+    }
+}
 
 dependencies {
     implementation 'androidx.core:core-ktx:1.13.1'
