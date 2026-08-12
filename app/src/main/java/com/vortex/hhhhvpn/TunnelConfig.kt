@@ -12,5 +12,7 @@ data class TunnelConfig(
     val localSocksPort: Int = 1080,
     val connectTimeoutMs: Int = 25000,
     val enableTcpNoDelay: Boolean = true,
-    val mtu: Int = 1500
+    val mtu: Int = 1500,
+    val splitTunneling: Boolean = false,
+    val bypassApps: List<String> = emptyList()
 )

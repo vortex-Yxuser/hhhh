@@ -7,6 +7,8 @@ import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.method.ScrollingMovementMethod
 import android.view.View
 import android.widget.*
@@ -14,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.button.MaterialButton
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -25,8 +28,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etPass: EditText
     private lateinit var tvStatus: TextView
     private lateinit var tvLogs: TextView
+    private lateinit var tvTimer: TextView
+    private lateinit var tvSpeed: TextView
     private lateinit var btnToggle: MaterialButton
     private lateinit var btnClearLog: Button
+    private lateinit var btnExport: Button
+    private lateinit var btnImport: Button
     private lateinit var spPreset: Spinner
     private lateinit var logsPanel: View
     private lateinit var bottomSheetBehavior: BottomSheetBehavior<View>
@@ -42,6 +49,28 @@ class MainActivity : AppCompatActivity() {
 
     private var isConnected = false
     private var hasShownConnectAd = false
+
+    // Timer & Speed simulation handler
+    private var startTime = 0L
+    private val handler = Handler(Looper.getMainLooper())
+    private val timerRunnable = object : Runnable {
+        override fun run() {
+            if (isConnected && startTime > 0) {
+                val millis = System.currentTimeMillis() - startTime
+                val seconds = (millis / 1000) % 60
+                val minutes = (millis / (1000 * 60)) % 60
+                val hours = (millis / (1000 * 60 * 60))
+                tvTimer.text = String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
+
+                // Simulated realistic active speed
+                val downKb = (120..650).random()
+                val upKb = (35..180).random()
+                tvSpeed.text = "↓ $downKb KB/s  ↑ $upKb KB/s"
+
+                handler.postDelayed(this, 1000)
+            }
+        }
+    }
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -97,19 +126,21 @@ class MainActivity : AppCompatActivity() {
         etPass = findViewById(R.id.etPass)
         tvStatus = findViewById(R.id.tvStatus)
         tvLogs = findViewById(R.id.tvLogs)
+        tvTimer = findViewById(R.id.tvTimer)
+        tvSpeed = findViewById(R.id.tvSpeed)
         btnToggle = findViewById(R.id.btnToggle)
         btnClearLog = findViewById(R.id.btnClearLog)
+        btnExport = findViewById(R.id.btnExport)
+        btnImport = findViewById(R.id.btnImport)
         spPreset = findViewById(R.id.spPreset)
         logsPanel = findViewById(R.id.logsPanel)
 
         tvLogs.movementMethod = ScrollingMovementMethod()
 
-        // Bottom sheet for logs
         bottomSheetBehavior = BottomSheetBehavior.from(logsPanel)
         bottomSheetBehavior.state = BottomSheetBehavior.STATE_COLLAPSED
         bottomSheetBehavior.isDraggable = true
 
-        // Load saved
         val cfg = Prefs.load(this)
         etHost.setText(cfg.sshHost)
         etPort.setText(cfg.sshPort.toString())
@@ -125,7 +156,6 @@ class MainActivity : AppCompatActivity() {
 
         btnToggle.setOnClickListener {
             if (isConnected) {
-                // Disconnect
                 startService(Intent(this, MyVpnService::class.java).apply {
                     action = MyVpnService.ACTION_DISCONNECT
                 })
@@ -140,6 +170,54 @@ class MainActivity : AppCompatActivity() {
             appendLog("Logs cleared")
         }
 
+        // Export Config (.yhn)
+        btnExport.setOnClickListener {
+            val host = etHost.text.toString().trim()
+            val port = etPort.text.toString().toIntOrNull() ?: 22
+            val user = etUser.text.toString().trim()
+            val pass = etPass.text.toString().trim()
+
+            if (host.isEmpty() || user.isEmpty()) {
+                Toast.makeText(this, "Please enter Host and Username to export", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            val preset = spPreset.selectedItem.toString()
+            val configContent = "YOHAN_VPN_CONFIG|v1|$host|$port|$user|$pass|$preset"
+            
+            try {
+                val file = File(getExternalFilesDir(null), "YohanConfig_${host}.yhn")
+                file.writeText(configContent)
+                Toast.makeText(this, "Exported to: ${file.absolutePath}", Toast.LENGTH_LONG).show()
+                appendLog("Config exported successfully: ${file.name}")
+            } catch (e: Exception) {
+                Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Import Config (.yhn) - Demo sample or internal file load
+        btnImport.setOnClickListener {
+            try {
+                val dir = getExternalFilesDir(null)
+                val files = dir?.listFiles { _, name -> name.endsWith(".yhn") }
+                if (files.isNullOrEmpty()) {
+                    // Create sample demo config if none exists
+                    val sample = File(dir, "DemoConfig.yhn")
+                    sample.writeText("YOHAN_VPN_CONFIG|v1|57.131.32.191|22|u1850448015|mypassword|YouTube")
+                    Toast.makeText(this, "Sample config imported: DemoConfig.yhn", Toast.LENGTH_LONG).show()
+                    loadConfigString("YOHAN_VPN_CONFIG|v1|57.131.32.191|22|u1850448015|mypassword|YouTube")
+                } else {
+                    val latest = files[files.size - 1]
+                    val content = latest.readText()
+                    loadConfigString(content)
+                    Toast.makeText(this, "Imported: ${latest.name}", Toast.LENGTH_SHORT).show()
+                    appendLog("Config imported from ${latest.name}")
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "Import failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         val filter = IntentFilter(MyVpnService.ACTION_LOG)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(logReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -150,8 +228,23 @@ class MainActivity : AppCompatActivity() {
         AdManager.loadAppOpenAd(this)
         AdManager.loadInterstitial(this)
 
-        appendLog("Yohan VPN ready")
-        appendLog("Enter SSH account then press CONNECT")
+        appendLog("Yohan VPN Pro ready")
+        appendLog("Enter SSH account or Import config then press CONNECT")
+    }
+
+    private fun loadConfigString(content: String) {
+        val parts = content.split("|")
+        if (parts.size >= 7 && parts[0] == "YOHAN_VPN_CONFIG") {
+            etHost.setText(parts[2])
+            etPort.setText(parts[3])
+            etUser.setText(parts[4])
+            etPass.setText(parts[5])
+            if (parts[6] == "Snapchat") {
+                spPreset.setSelection(1)
+            } else {
+                spPreset.setSelection(0)
+            }
+        }
     }
 
     override fun onResume() {
@@ -162,6 +255,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(timerRunnable)
         try {
             unregisterReceiver(logReceiver)
         } catch (_: Exception) {}
@@ -184,7 +278,6 @@ class MainActivity : AppCompatActivity() {
         val selectedPreset = spPreset.selectedItem.toString()
         val payload = if (selectedPreset == "Snapchat") PAYLOAD_SNAPCHAT else PAYLOAD_YOUTUBE
 
-        // Save
         Prefs.save(this, TunnelConfig(
             sshHost = host,
             sshPort = port,
@@ -225,11 +318,18 @@ class MainActivity : AppCompatActivity() {
             btnToggle.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#DC2626"))
             tvStatus.text = "Connected"
             tvStatus.setTextColor(android.graphics.Color.parseColor("#4ADE80"))
+            
+            if (startTime == 0L) startTime = System.currentTimeMillis()
+            handler.post(timerRunnable)
         } else {
             btnToggle.text = "CONNECT"
-            btnToggle.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#2563EB"))
+            btnToggle.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#7C4DFF"))
             tvStatus.text = "Disconnected"
             tvStatus.setTextColor(android.graphics.Color.parseColor("#38BDF8"))
+            tvTimer.text = "00:00:00"
+            tvSpeed.text = "↓ 0 KB/s  ↑ 0 KB/s"
+            startTime = 0L
+            handler.removeCallbacks(timerRunnable)
         }
     }
 
