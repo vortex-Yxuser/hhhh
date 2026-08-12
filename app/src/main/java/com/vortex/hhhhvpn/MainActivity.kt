@@ -12,6 +12,8 @@ import android.os.Handler
 import android.os.Looper
 import android.text.method.ScrollingMovementMethod
 import android.util.Base64
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,9 +37,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvSpeed: TextView
     private lateinit var btnToggle: MaterialButton
     private lateinit var btnClearLog: Button
-    private lateinit var btnExport: Button
-    private lateinit var btnImport: Button
-    private lateinit var btnReset: Button
     private lateinit var spPreset: Spinner
     private lateinit var logsPanel: View
     private lateinit var bottomSheetBehavior: BottomSheetBehavior<View>
@@ -54,7 +53,6 @@ class MainActivity : AppCompatActivity() {
     private var isConnected = false
     private var hasShownConnectAd = false
 
-    // Hidden backing variables for locked configs
     private var hiddenHost = ""
     private var hiddenPort = 22
     private var hiddenUser = ""
@@ -158,9 +156,6 @@ class MainActivity : AppCompatActivity() {
         tvSpeed = findViewById(R.id.tvSpeed)
         btnToggle = findViewById(R.id.btnToggle)
         btnClearLog = findViewById(R.id.btnClearLog)
-        btnExport = findViewById(R.id.btnExport)
-        btnImport = findViewById(R.id.btnImport)
-        btnReset = findViewById(R.id.btnReset)
         spPreset = findViewById(R.id.spPreset)
         logsPanel = findViewById(R.id.logsPanel)
 
@@ -203,85 +198,94 @@ class MainActivity : AppCompatActivity() {
             appendLog("Logs cleared")
         }
 
-        // Reset / Clear Config Button
-        btnReset.setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("Reset Configuration")
-                .setMessage("Are you sure you want to clear all SSH account fields?")
-                .setPositiveButton("Yes") { _, _ ->
-                    etHost.setText("")
-                    etPort.setText("22")
-                    etUser.setText("")
-                    etPass.setText("")
-                    hiddenHost = ""
-                    hiddenPort = 22
-                    hiddenUser = ""
-                    hiddenPass = ""
-                    isConfigLocked = false
-                    Prefs.save(this, TunnelConfig())
-                    Toast.makeText(this, "Configuration reset", Toast.LENGTH_SHORT).show()
-                    appendLog("Configuration cleared. Please enter SSH details.")
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        }
-
-        // Export with Custom Filename, Encryption & Lock Option
-        btnExport.setOnClickListener {
-            val host = if (isConfigLocked) hiddenHost else etHost.text.toString().trim()
-            val user = if (isConfigLocked) hiddenUser else etUser.text.toString().trim()
-            if (host.isEmpty() || user.isEmpty()) {
-                Toast.makeText(this, "Please enter Host and Username", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            val layout = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(40, 20, 40, 20)
-            }
-
-            val inputField = EditText(this).apply {
-                hint = "Enter config name (e.g., MyServer)"
-                setText("YohanConfig")
-            }
-            layout.addView(inputField)
-
-            val lockCheckbox = CheckBox(this).apply {
-                text = "Lock SSH Info (Hide details on import)"
-                isChecked = false
-                setTextColor(resources.getColor(android.R.color.white, null))
-            }
-            layout.addView(lockCheckbox)
-
-            AlertDialog.Builder(this)
-                .setTitle("Export Config (.yhn)")
-                .setView(layout)
-                .setPositiveButton("Export") { _, _ ->
-                    val customName = inputField.text.toString().trim().ifEmpty { "YohanConfig" }
-                    val isLocked = lockCheckbox.isChecked
-                    exportConfigToFile(customName, isLocked)
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        }
-
-        // Import using system File Picker
-        btnImport.setOnClickListener {
-            filePickerLauncher.launch("*/*")
-        }
-
-        val filter = IntentFilter(MyVpnService.ACTION_LOG)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(logReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(logReceiver, filter)
-        }
-
         AdManager.loadAppOpenAd(this)
         AdManager.loadInterstitial(this)
 
         appendLog("Yohan VPN Pro ready")
-        appendLog("Enter SSH account or Import/Export encrypted configs")
+        appendLog("Use top-right menu for Export, Import, and Reset")
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_export -> {
+                promptExportConfig()
+                true
+            }
+            R.id.action_import -> {
+                filePickerLauncher.launch("*/*")
+                true
+            }
+            R.id.action_reset -> {
+                promptResetConfig()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun promptResetConfig() {
+        AlertDialog.Builder(this)
+            .setTitle("Reset Configuration")
+            .setMessage("Are you sure you want to clear all SSH account fields?")
+            .setPositiveButton("Yes") { _, _ ->
+                etHost.setText("")
+                etPort.setText("22")
+                etUser.setText("")
+                etPass.setText("")
+                hiddenHost = ""
+                hiddenPort = 22
+                hiddenUser = ""
+                hiddenPass = ""
+                isConfigLocked = false
+                Prefs.save(this, TunnelConfig())
+                Toast.makeText(this, "Configuration reset", Toast.LENGTH_SHORT).show()
+                appendLog("Configuration cleared. Please enter SSH details.")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun promptExportConfig() {
+        val host = if (isConfigLocked) hiddenHost else etHost.text.toString().trim()
+        val user = if (isConfigLocked) hiddenUser else etUser.text.toString().trim()
+        if (host.isEmpty() || user.isEmpty()) {
+            Toast.makeText(this, "Please enter Host and Username", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+        }
+
+        val inputField = EditText(this).apply {
+            hint = "Enter config name (e.g., MyServer)"
+            setText("YohanConfig")
+        }
+        layout.addView(inputField)
+
+        val lockCheckbox = CheckBox(this).apply {
+            text = "Lock SSH Info (Hide details on import)"
+            isChecked = false
+            setTextColor(resources.getColor(android.R.color.white, null))
+        }
+        layout.addView(lockCheckbox)
+
+        AlertDialog.Builder(this)
+            .setTitle("Export Config (.yhn)")
+            .setView(layout)
+            .setPositiveButton("Export") { _, _ ->
+                val customName = inputField.text.toString().trim().ifEmpty { "YohanConfig" }
+                val isLocked = lockCheckbox.isChecked
+                exportConfigToFile(customName, isLocked)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun exportConfigToFile(fileName: String, isLocked: Boolean) {
@@ -293,6 +297,7 @@ class MainActivity : AppCompatActivity() {
             val preset = spPreset.selectedItem.toString()
 
             val lockFlag = if (isLocked) "LOCKED" else "VISIBLE"
+            // Ensure password is fully stored and encrypted inside the config string
             val rawData = "YOHAN_PRO_CONFIG|v1|$lockFlag|$host|$port|$user|$pass|$preset"
             val encrypted = encryptString(rawData)
 
@@ -303,7 +308,7 @@ class MainActivity : AppCompatActivity() {
             file.writeText(encrypted)
 
             Toast.makeText(this, "Saved to: Documents/${file.name}", Toast.LENGTH_LONG).show()
-            appendLog("Encrypted config exported (Locked: $isLocked): ${file.name}")
+            appendLog("Encrypted config exported with password (Locked: $isLocked): ${file.name}")
         } catch (e: Exception) {
             Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
             appendLog("Export error: ${e.message}")
@@ -341,7 +346,7 @@ class MainActivity : AppCompatActivity() {
             hiddenHost = parts[3]
             hiddenPort = parts[4].toIntOrNull() ?: 22
             hiddenUser = parts[5]
-            hiddenPass = parts[6]
+            hiddenPass = parts[6] // Password included
             val preset = parts[7]
 
             if (lockFlag == "LOCKED") {
@@ -349,9 +354,9 @@ class MainActivity : AppCompatActivity() {
                 etHost.setText("******** (Locked)")
                 etPort.setText(hiddenPort.toString())
                 etUser.setText("******** (Locked)")
-                etPass.setText("")
+                etPass.setText("********")
                 Toast.makeText(this, "Config imported (SSH details are locked by creator)", Toast.LENGTH_LONG).show()
-                appendLog("Config imported successfully [LOCKED mode]")
+                appendLog("Config imported successfully [LOCKED mode with encrypted password]")
             } else {
                 isConfigLocked = false
                 etHost.setText(hiddenHost)
