@@ -54,6 +54,13 @@ class MainActivity : AppCompatActivity() {
     private var isConnected = false
     private var hasShownConnectAd = false
 
+    // Hidden backing variables for locked configs
+    private var hiddenHost = ""
+    private var hiddenPort = 22
+    private var hiddenUser = ""
+    private var hiddenPass = ""
+    private var isConfigLocked = false
+
     private var startTime = 0L
     private val handler = Handler(Looper.getMainLooper())
     private val timerRunnable = object : Runnable {
@@ -168,6 +175,10 @@ class MainActivity : AppCompatActivity() {
         etPort.setText(cfg.sshPort.toString())
         etUser.setText(cfg.sshUser)
         etPass.setText(cfg.sshPass)
+        hiddenHost = cfg.sshHost
+        hiddenPort = cfg.sshPort
+        hiddenUser = cfg.sshUser
+        hiddenPass = cfg.sshPass
 
         val modes = arrayOf("YouTube", "Snapchat")
         spPreset.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
@@ -202,6 +213,11 @@ class MainActivity : AppCompatActivity() {
                     etPort.setText("22")
                     etUser.setText("")
                     etPass.setText("")
+                    hiddenHost = ""
+                    hiddenPort = 22
+                    hiddenUser = ""
+                    hiddenPass = ""
+                    isConfigLocked = false
                     Prefs.save(this, TunnelConfig())
                     Toast.makeText(this, "Configuration reset", Toast.LENGTH_SHORT).show()
                     appendLog("Configuration cleared. Please enter SSH details.")
@@ -212,8 +228,8 @@ class MainActivity : AppCompatActivity() {
 
         // Export with Custom Filename, Encryption & Lock Option
         btnExport.setOnClickListener {
-            val host = etHost.text.toString().trim()
-            val user = etUser.text.toString().trim()
+            val host = if (isConfigLocked) hiddenHost else etHost.text.toString().trim()
+            val user = if (isConfigLocked) hiddenUser else etUser.text.toString().trim()
             if (host.isEmpty() || user.isEmpty()) {
                 Toast.makeText(this, "Please enter Host and Username", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
@@ -270,10 +286,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun exportConfigToFile(fileName: String, isLocked: Boolean) {
         try {
-            val host = etHost.text.toString().trim()
-            val port = etPort.text.toString().toIntOrNull() ?: 22
-            val user = etUser.text.toString().trim()
-            val pass = etPass.text.toString().trim()
+            val host = if (isConfigLocked) hiddenHost else etHost.text.toString().trim()
+            val port = (if (isConfigLocked) hiddenPort.toString() else etPort.text.toString()).toIntOrNull() ?: 22
+            val user = if (isConfigLocked) hiddenUser else etUser.text.toString().trim()
+            val pass = if (isConfigLocked) hiddenPass else etPass.text.toString().trim()
             val preset = spPreset.selectedItem.toString()
 
             val lockFlag = if (isLocked) "LOCKED" else "VISIBLE"
@@ -320,37 +336,50 @@ class MainActivity : AppCompatActivity() {
         val decrypted = decryptString(encryptedContent.trim())
         val parts = decrypted.split("|")
         
-        // Check new format with lock flag: YOHAN_PRO_CONFIG|v1|LOCKED/VISIBLE|host|port|user|pass|preset
         if (parts.size >= 8 && parts[0] == "YOHAN_PRO_CONFIG") {
             val lockFlag = parts[2]
+            hiddenHost = parts[3]
+            hiddenPort = parts[4].toIntOrNull() ?: 22
+            hiddenUser = parts[5]
+            hiddenPass = parts[6]
+            val preset = parts[7]
+
             if (lockFlag == "LOCKED") {
-                // Hide details in UI, but keep internal encrypted/usable state if needed
+                isConfigLocked = true
                 etHost.setText("******** (Locked)")
-                etPort.setText(parts[4])
+                etPort.setText(hiddenPort.toString())
                 etUser.setText("******** (Locked)")
                 etPass.setText("")
                 Toast.makeText(this, "Config imported (SSH details are locked by creator)", Toast.LENGTH_LONG).show()
                 appendLog("Config imported successfully [LOCKED mode]")
             } else {
-                etHost.setText(parts[3])
-                etPort.setText(parts[4])
-                etUser.setText(parts[5])
-                etPass.setText(parts[6])
-                if (parts[7] == "Snapchat") {
-                    spPreset.setSelection(1)
-                } else {
-                    spPreset.setSelection(0)
-                }
+                isConfigLocked = false
+                etHost.setText(hiddenHost)
+                etPort.setText(hiddenPort.toString())
+                etUser.setText(hiddenUser)
+                etPass.setText(hiddenPass)
                 Toast.makeText(this, "Config imported successfully!", Toast.LENGTH_SHORT).show()
                 appendLog("Config imported successfully [Visible mode]")
             }
+
+            if (preset == "Snapchat") {
+                spPreset.setSelection(1)
+            } else {
+                spPreset.setSelection(0)
+            }
         } else if (parts.size >= 7 && parts[0] == "YOHAN_PRO_CONFIG") {
-            // Legacy format compatibility
-            etHost.setText(parts[2])
-            etPort.setText(parts[3])
-            etUser.setText(parts[4])
-            etPass.setText(parts[5])
-            if (parts[6] == "Snapchat") {
+            isConfigLocked = false
+            hiddenHost = parts[2]
+            hiddenPort = parts[3].toIntOrNull() ?: 22
+            hiddenUser = parts[4]
+            hiddenPass = parts[5]
+            val preset = parts[6]
+
+            etHost.setText(hiddenHost)
+            etPort.setText(hiddenPort.toString())
+            etUser.setText(hiddenUser)
+            etPass.setText(hiddenPass)
+            if (preset == "Snapchat") {
                 spPreset.setSelection(1)
             } else {
                 spPreset.setSelection(0)
@@ -379,18 +408,36 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onConnectClicked() {
-        val host = etHost.text.toString().trim()
-        val portStr = etPort.text.toString().trim()
-        val user = etUser.text.toString().trim()
-        val pass = etPass.text.toString().trim()
+        val host: String
+        val port: Int
+        val user: String
+        val pass: String
 
-        if (host.isEmpty() || portStr.isEmpty() || user.isEmpty() || pass.isEmpty() || host.contains("Locked")) {
-            Toast.makeText(this, "Please fill valid SSH fields", Toast.LENGTH_SHORT).show()
-            appendLog("Error: Please fill valid SSH fields")
+        if (isConfigLocked) {
+            host = hiddenHost
+            port = hiddenPort
+            user = hiddenUser
+            pass = hiddenPass
+        } else {
+            host = etHost.text.toString().trim()
+            val portStr = etPort.text.toString().trim()
+            user = etUser.text.toString().trim()
+            pass = etPass.text.toString().trim()
+
+            if (host.isEmpty() || portStr.isEmpty() || user.isEmpty() || pass.isEmpty()) {
+                Toast.makeText(this, "Please fill all SSH fields", Toast.LENGTH_SHORT).show()
+                appendLog("Error: Please fill all SSH fields")
+                return
+            }
+            port = portStr.toIntOrNull() ?: 22
+        }
+
+        if (host.isEmpty() || user.isEmpty()) {
+            Toast.makeText(this, "Invalid SSH configuration", Toast.LENGTH_SHORT).show()
+            appendLog("Error: Invalid SSH configuration")
             return
         }
 
-        val port = portStr.toIntOrNull() ?: 22
         val selectedPreset = spPreset.selectedItem.toString()
         val payload = if (selectedPreset == "Snapchat") PAYLOAD_SNAPCHAT else PAYLOAD_YOUTUBE
 
