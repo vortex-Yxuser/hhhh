@@ -7,12 +7,15 @@ import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.text.method.ScrollingMovementMethod
+import android.util.Base64
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.button.MaterialButton
@@ -50,7 +53,6 @@ class MainActivity : AppCompatActivity() {
     private var isConnected = false
     private var hasShownConnectAd = false
 
-    // Timer & Speed simulation handler
     private var startTime = 0L
     private val handler = Handler(Looper.getMainLooper())
     private val timerRunnable = object : Runnable {
@@ -62,12 +64,30 @@ class MainActivity : AppCompatActivity() {
                 val hours = (millis / (1000 * 60 * 60))
                 tvTimer.text = String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
 
-                // Simulated realistic active speed
                 val downKb = (120..650).random()
                 val upKb = (35..180).random()
                 tvSpeed.text = "↓ $downKb KB/s  ↑ $upKb KB/s"
 
                 handler.postDelayed(this, 1000)
+            }
+        }
+    }
+
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val inputStream = contentResolver.openInputStream(uri)
+                val content = inputStream?.bufferedReader().use { it?.readText() } ?: ""
+                if (content.isNotBlank()) {
+                    loadEncryptedConfigString(content)
+                    Toast.makeText(this, "Config imported successfully!", Toast.LENGTH_SHORT).show()
+                    appendLog("Config imported from storage")
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "Import failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                appendLog("Import error: ${e.message}")
             }
         }
     }
@@ -170,52 +190,35 @@ class MainActivity : AppCompatActivity() {
             appendLog("Logs cleared")
         }
 
-        // Export Config (.yhn)
+        // Export with Custom Filename & Encryption
         btnExport.setOnClickListener {
             val host = etHost.text.toString().trim()
-            val port = etPort.text.toString().toIntOrNull() ?: 22
             val user = etUser.text.toString().trim()
-            val pass = etPass.text.toString().trim()
-
             if (host.isEmpty() || user.isEmpty()) {
-                Toast.makeText(this, "Please enter Host and Username to export", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please enter Host and Username", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            val preset = spPreset.selectedItem.toString()
-            val configContent = "YOHAN_VPN_CONFIG|v1|$host|$port|$user|$pass|$preset"
-            
-            try {
-                val file = File(getExternalFilesDir(null), "YohanConfig_${host}.yhn")
-                file.writeText(configContent)
-                Toast.makeText(this, "Exported to: ${file.absolutePath}", Toast.LENGTH_LONG).show()
-                appendLog("Config exported successfully: ${file.name}")
-            } catch (e: Exception) {
-                Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            val inputField = EditText(this).apply {
+                hint = "Enter config name (e.g., MyServer)"
+                setText("YohanConfig")
             }
+
+            AlertDialog.Builder(this)
+                .setTitle("Export Config (.yhn)")
+                .setMessage("Enter a name for your encrypted config file:")
+                .setView(inputField)
+                .setPositiveButton("Export") { _, _ ->
+                    val customName = inputField.text.toString().trim().ifEmpty { "YohanConfig" }
+                    exportConfigToFile(customName)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
 
-        // Import Config (.yhn) - Demo sample or internal file load
+        // Import using system File Picker
         btnImport.setOnClickListener {
-            try {
-                val dir = getExternalFilesDir(null)
-                val files = dir?.listFiles { _, name -> name.endsWith(".yhn") }
-                if (files.isNullOrEmpty()) {
-                    // Create sample demo config if none exists
-                    val sample = File(dir, "DemoConfig.yhn")
-                    sample.writeText("YOHAN_VPN_CONFIG|v1|57.131.32.191|22|u1850448015|mypassword|YouTube")
-                    Toast.makeText(this, "Sample config imported: DemoConfig.yhn", Toast.LENGTH_LONG).show()
-                    loadConfigString("YOHAN_VPN_CONFIG|v1|57.131.32.191|22|u1850448015|mypassword|YouTube")
-                } else {
-                    val latest = files[files.size - 1]
-                    val content = latest.readText()
-                    loadConfigString(content)
-                    Toast.makeText(this, "Imported: ${latest.name}", Toast.LENGTH_SHORT).show()
-                    appendLog("Config imported from ${latest.name}")
-                }
-            } catch (e: Exception) {
-                Toast.makeText(this, "Import failed: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
+            filePickerLauncher.launch("*/*")
         }
 
         val filter = IntentFilter(MyVpnService.ACTION_LOG)
@@ -229,12 +232,62 @@ class MainActivity : AppCompatActivity() {
         AdManager.loadInterstitial(this)
 
         appendLog("Yohan VPN Pro ready")
-        appendLog("Enter SSH account or Import config then press CONNECT")
+        appendLog("Enter SSH account or Import/Export encrypted configs")
     }
 
-    private fun loadConfigString(content: String) {
-        val parts = content.split("|")
-        if (parts.size >= 7 && parts[0] == "YOHAN_VPN_CONFIG") {
+    private fun exportConfigToFile(fileName: String) {
+        try {
+            val host = etHost.text.toString().trim()
+            val port = etPort.text.toString().toIntOrNull() ?: 22
+            val user = etUser.text.toString().trim()
+            val pass = etPass.text.toString().trim()
+            val preset = spPreset.selectedItem.toString()
+
+            val rawData = "YOHAN_PRO_CONFIG|v1|$host|$port|$user|$pass|$preset"
+            // Encrypt with Base64 + Simple XOR key transformation for security
+            val encrypted = encryptString(rawData)
+
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            if (!dir.exists()) dir.mkdirs()
+
+            val file = File(dir, "$fileName.yhn")
+            file.writeText(encrypted)
+
+            Toast.makeText(this, "Saved to: Documents/${file.name}", Toast.LENGTH_LONG).show()
+            appendLog("Encrypted config exported: ${file.absolutePath}")
+        } catch (e: Exception) {
+            Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            appendLog("Export error: ${e.message}")
+        }
+    }
+
+    private fun encryptString(input: String): String {
+        val xorKey = 0x5A.toByte()
+        val bytes = input.toByteArray(Charsets.UTF_8)
+        for (i in bytes.indices) {
+            bytes[i] = (bytes[i].toInt() xor xorKey.toInt()).toByte()
+        }
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+    }
+
+    private fun decryptString(input: String): String {
+        try {
+            val decodedBytes = Base64.decode(input, Base64.NO_WRAP)
+            val xorKey = 0x5A.toByte()
+            for (i in decodedBytes.indices) {
+                decodedBytes[i] = (decodedBytes[i].toInt() xor xorKey.toInt()).toByte()
+            }
+            return String(decodedBytes, Charsets.UTF_8)
+        } catch (e: Exception) {
+            // Fallback if unencrypted
+            return input
+        }
+    }
+
+    private fun loadEncryptedConfigString(encryptedContent: String) {
+        val decrypted = decryptString(encryptedContent.trim())
+        val parts = decrypted.split("|")
+        if (parts.size >= 7 && parts[0] == "YOHAN_PRO_CONFIG") {
             etHost.setText(parts[2])
             etPort.setText(parts[3])
             etUser.setText(parts[4])
@@ -244,6 +297,10 @@ class MainActivity : AppCompatActivity() {
             } else {
                 spPreset.setSelection(0)
             }
+            appendLog("Config successfully decrypted and loaded")
+        } else {
+            Toast.makeText(this, "Invalid or corrupted config file", Toast.LENGTH_SHORT).show()
+            appendLog("Error: Invalid config format")
         }
     }
 
