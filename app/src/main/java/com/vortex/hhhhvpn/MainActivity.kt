@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
                         setConnectedState(true)
                         if (!hasShownConnectAd) {
                             hasShownConnectAd = true
-                            AdManager.showInterstitialIfAvailable(this@MainActivity)
+                            AdManager.showInterstitial(this@MainActivity) {}
                         }
                     }
                     message.contains("failed") || message.contains("✗") ||
@@ -161,54 +161,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setConnectedState(connected: Boolean) {
-        isConnected = connected
-        if (connected) {
-            tvStatus.text = "Connected"
-            tvStatus.setTextColor(0xFF4CAF50.toInt())
-            tvStatus.setBackgroundResource(R.drawable.status_pill_connected)
-            btnToggle.text = "DISCONNECT"
-            btnToggle.setBackgroundColor(0xFFC62828.toInt())
-        } else {
-            tvStatus.text = "Disconnected"
-            tvStatus.setTextColor(0xFFEF5350.toInt())
-            tvStatus.setBackgroundResource(R.drawable.status_pill_disconnected)
-            btnToggle.text = "CONNECT"
-            btnToggle.setBackgroundColor(0xFF7C4DFF.toInt())
-        }
-    }
-
-    private fun appendLog(msg: String) {
-        val ts = timeFmt.format(Date())
-        tvLogs.append("[$ts] $msg\n")
+    override fun onDestroy() {
+        try {
+            unregisterReceiver(logReceiver)
+        } catch (_: Exception) {}
+        super.onDestroy()
     }
 
     private fun onConnectClicked() {
-        val isSnapchat = spPreset.selectedItemPosition == 1
-        val payload = if (isSnapchat) PAYLOAD_SNAPCHAT else PAYLOAD_YOUTUBE
+        val host = etHost.text.toString().trim()
+        val portStr = etPort.text.toString().trim()
+        val user = etUser.text.toString().trim()
+        val pass = etPass.text.toString().trim()
 
-        val config = TunnelConfig(
-            sshHost = etHost.text.toString().trim(),
-            sshPort = etPort.text.toString().trim().toIntOrNull() ?: 22,
-            sshUser = etUser.text.toString().trim(),
-            sshPass = etPass.text.toString(),
-            payload = payload,
-            proxyEnabled = true,
-            proxyHost = PROXY_HOST,
-            proxyPort = PROXY_PORT,
-            localSocksPort = 1080,
-            connectTimeoutMs = 25000,
-            enableTcpNoDelay = true,
-            mtu = 1500
-        )
-
-        if (config.sshHost.isBlank() || config.sshUser.isBlank()) {
-            Toast.makeText(this, "Enter SSH Host and Username", Toast.LENGTH_SHORT).show()
+        if (host.isEmpty() || portStr.isEmpty() || user.isEmpty() || pass.isEmpty()) {
+            Toast.makeText(this, "Please fill all SSH fields", Toast.LENGTH_SHORT).show()
+            appendLog("Error: Please fill all SSH fields")
             return
         }
 
-        Prefs.save(this, config)
-        appendLog("Connecting with ${if (isSnapchat) "Snapchat" else "YouTube"} mode...")
+        val port = portStr.toIntOrNull() ?: 22
+        val selectedPreset = spPreset.selectedItem.toString()
+        val payload = if (selectedPreset == "Snapchat") PAYLOAD_SNAPCHAT else PAYLOAD_YOUTUBE
+
+        // Save
+        Prefs.save(this, TunnelConfig(
+            sshHost = host,
+            sshPort = port,
+            sshUser = user,
+            sshPass = pass,
+            proxyHost = PROXY_HOST,
+            proxyPort = PROXY_PORT,
+            proxyEnabled = true,
+            payload = payload
+        ))
+
+        setConnectedState(true)
+        appendLog("Preparing VPN connection...")
 
         val intent = VpnService.prepare(this)
         if (intent != null) {
@@ -219,24 +208,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun reallyStartVpn() {
-        setConnectedState(false) // temporary, will become true on success
-        tvStatus.text = "Connecting..."
-        btnToggle.isEnabled = false
-        hasShownConnectAd = false
-
-        val intent = Intent(this, MyVpnService::class.java).apply {
+        val serviceIntent = Intent(this, MyVpnService::class.java).apply {
             action = MyVpnService.ACTION_CONNECT
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
+            startForegroundService(serviceIntent)
         } else {
-            startService(intent)
+            startService(serviceIntent)
         }
-        btnToggle.postDelayed({ btnToggle.isEnabled = true }, 1500)
     }
 
-    override fun onDestroy() {
-        try { unregisterReceiver(logReceiver) } catch (_: Exception) {}
-        super.onDestroy()
+    private fun setConnectedState(connected: Boolean) {
+        isConnected = connected
+        if (connected) {
+            btnToggle.text = "DISCONNECT"
+            btnToggle.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#DC2626"))
+            tvStatus.text = "Connected"
+            tvStatus.setTextColor(android.graphics.Color.parseColor("#4ADE80"))
+        } else {
+            btnToggle.text = "CONNECT"
+            btnToggle.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#2563EB"))
+            tvStatus.text = "Disconnected"
+            tvStatus.setTextColor(android.graphics.Color.parseColor("#38BDF8"))
+        }
+    }
+
+    private fun appendLog(msg: String) {
+        val ts = timeFmt.format(Date())
+        tvLogs.append("[$ts] $msg\n")
     }
 }
