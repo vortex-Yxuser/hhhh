@@ -170,7 +170,7 @@
             android:layout_marginBottom="10dp"
             android:singleLine="true" />
 
-        <!-- Mode & Export/Import -->
+        <!-- Mode & Export/Import/Reset -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -184,7 +184,7 @@
                 android:layout_height="44dp"
                 android:background="@drawable/edit_bg"
                 android:popupBackground="#1C1C22"
-                android:layout_marginEnd="6dp" />
+                android:layout_marginEnd="4dp" />
 
             <Button
                 android:id="@+id/btnExport"
@@ -192,9 +192,9 @@
                 android:layout_height="44dp"
                 android:text="Export"
                 android:textColor="#FFFFFF"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:backgroundTint="#333333"
-                android:layout_marginEnd="4dp" />
+                android:layout_marginEnd="2dp" />
 
             <Button
                 android:id="@+id/btnImport"
@@ -202,8 +202,18 @@
                 android:layout_height="44dp"
                 android:text="Import"
                 android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:backgroundTint="#333333" />
+                android:textSize="11sp"
+                android:backgroundTint="#333333"
+                android:layout_marginEnd="2dp" />
+
+            <Button
+                android:id="@+id/btnReset"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:text="Reset"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp"
+                android:backgroundTint="#DC2626" />
         </LinearLayout>
 
         <!-- Single Toggle Button -->

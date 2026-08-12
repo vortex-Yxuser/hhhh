@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnClearLog: Button
     private lateinit var btnExport: Button
     private lateinit var btnImport: Button
+    private lateinit var btnReset: Button
     private lateinit var spPreset: Spinner
     private lateinit var logsPanel: View
     private lateinit var bottomSheetBehavior: BottomSheetBehavior<View>
@@ -152,6 +153,7 @@ class MainActivity : AppCompatActivity() {
         btnClearLog = findViewById(R.id.btnClearLog)
         btnExport = findViewById(R.id.btnExport)
         btnImport = findViewById(R.id.btnImport)
+        btnReset = findViewById(R.id.btnReset)
         spPreset = findViewById(R.id.spPreset)
         logsPanel = findViewById(R.id.logsPanel)
 
@@ -190,7 +192,25 @@ class MainActivity : AppCompatActivity() {
             appendLog("Logs cleared")
         }
 
-        // Export with Custom Filename & Encryption
+        // Reset / Clear Config Button
+        btnReset.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Reset Configuration")
+                .setMessage("Are you sure you want to clear all SSH account fields?")
+                .setPositiveButton("Yes") { _, _ ->
+                    etHost.setText("")
+                    etPort.setText("22")
+                    etUser.setText("")
+                    etPass.setText("")
+                    Prefs.save(this, TunnelConfig())
+                    Toast.makeText(this, "Configuration reset", Toast.LENGTH_SHORT).show()
+                    appendLog("Configuration cleared. Please enter SSH details.")
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        // Export with Custom Filename, Encryption & Lock Option
         btnExport.setOnClickListener {
             val host = etHost.text.toString().trim()
             val user = etUser.text.toString().trim()
@@ -199,18 +219,31 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            val layout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(40, 20, 40, 20)
+            }
+
             val inputField = EditText(this).apply {
                 hint = "Enter config name (e.g., MyServer)"
                 setText("YohanConfig")
             }
+            layout.addView(inputField)
+
+            val lockCheckbox = CheckBox(this).apply {
+                text = "Lock SSH Info (Hide details on import)"
+                isChecked = false
+                setTextColor(resources.getColor(android.R.color.white, null))
+            }
+            layout.addView(lockCheckbox)
 
             AlertDialog.Builder(this)
                 .setTitle("Export Config (.yhn)")
-                .setMessage("Enter a name for your encrypted config file:")
-                .setView(inputField)
+                .setView(layout)
                 .setPositiveButton("Export") { _, _ ->
                     val customName = inputField.text.toString().trim().ifEmpty { "YohanConfig" }
-                    exportConfigToFile(customName)
+                    val isLocked = lockCheckbox.isChecked
+                    exportConfigToFile(customName, isLocked)
                 }
                 .setNegativeButton("Cancel", null)
                 .show()
@@ -235,7 +268,7 @@ class MainActivity : AppCompatActivity() {
         appendLog("Enter SSH account or Import/Export encrypted configs")
     }
 
-    private fun exportConfigToFile(fileName: String) {
+    private fun exportConfigToFile(fileName: String, isLocked: Boolean) {
         try {
             val host = etHost.text.toString().trim()
             val port = etPort.text.toString().toIntOrNull() ?: 22
@@ -243,8 +276,8 @@ class MainActivity : AppCompatActivity() {
             val pass = etPass.text.toString().trim()
             val preset = spPreset.selectedItem.toString()
 
-            val rawData = "YOHAN_PRO_CONFIG|v1|$host|$port|$user|$pass|$preset"
-            // Encrypt with Base64 + Simple XOR key transformation for security
+            val lockFlag = if (isLocked) "LOCKED" else "VISIBLE"
+            val rawData = "YOHAN_PRO_CONFIG|v1|$lockFlag|$host|$port|$user|$pass|$preset"
             val encrypted = encryptString(rawData)
 
             val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
@@ -254,7 +287,7 @@ class MainActivity : AppCompatActivity() {
             file.writeText(encrypted)
 
             Toast.makeText(this, "Saved to: Documents/${file.name}", Toast.LENGTH_LONG).show()
-            appendLog("Encrypted config exported: ${file.absolutePath}")
+            appendLog("Encrypted config exported (Locked: $isLocked): ${file.name}")
         } catch (e: Exception) {
             Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
             appendLog("Export error: ${e.message}")
@@ -279,7 +312,6 @@ class MainActivity : AppCompatActivity() {
             }
             return String(decodedBytes, Charsets.UTF_8)
         } catch (e: Exception) {
-            // Fallback if unencrypted
             return input
         }
     }
@@ -287,7 +319,33 @@ class MainActivity : AppCompatActivity() {
     private fun loadEncryptedConfigString(encryptedContent: String) {
         val decrypted = decryptString(encryptedContent.trim())
         val parts = decrypted.split("|")
-        if (parts.size >= 7 && parts[0] == "YOHAN_PRO_CONFIG") {
+        
+        // Check new format with lock flag: YOHAN_PRO_CONFIG|v1|LOCKED/VISIBLE|host|port|user|pass|preset
+        if (parts.size >= 8 && parts[0] == "YOHAN_PRO_CONFIG") {
+            val lockFlag = parts[2]
+            if (lockFlag == "LOCKED") {
+                // Hide details in UI, but keep internal encrypted/usable state if needed
+                etHost.setText("******** (Locked)")
+                etPort.setText(parts[4])
+                etUser.setText("******** (Locked)")
+                etPass.setText("")
+                Toast.makeText(this, "Config imported (SSH details are locked by creator)", Toast.LENGTH_LONG).show()
+                appendLog("Config imported successfully [LOCKED mode]")
+            } else {
+                etHost.setText(parts[3])
+                etPort.setText(parts[4])
+                etUser.setText(parts[5])
+                etPass.setText(parts[6])
+                if (parts[7] == "Snapchat") {
+                    spPreset.setSelection(1)
+                } else {
+                    spPreset.setSelection(0)
+                }
+                Toast.makeText(this, "Config imported successfully!", Toast.LENGTH_SHORT).show()
+                appendLog("Config imported successfully [Visible mode]")
+            }
+        } else if (parts.size >= 7 && parts[0] == "YOHAN_PRO_CONFIG") {
+            // Legacy format compatibility
             etHost.setText(parts[2])
             etPort.setText(parts[3])
             etUser.setText(parts[4])
@@ -297,7 +355,8 @@ class MainActivity : AppCompatActivity() {
             } else {
                 spPreset.setSelection(0)
             }
-            appendLog("Config successfully decrypted and loaded")
+            Toast.makeText(this, "Config imported successfully!", Toast.LENGTH_SHORT).show()
+            appendLog("Config imported successfully")
         } else {
             Toast.makeText(this, "Invalid or corrupted config file", Toast.LENGTH_SHORT).show()
             appendLog("Error: Invalid config format")
@@ -325,9 +384,9 @@ class MainActivity : AppCompatActivity() {
         val user = etUser.text.toString().trim()
         val pass = etPass.text.toString().trim()
 
-        if (host.isEmpty() || portStr.isEmpty() || user.isEmpty() || pass.isEmpty()) {
-            Toast.makeText(this, "Please fill all SSH fields", Toast.LENGTH_SHORT).show()
-            appendLog("Error: Please fill all SSH fields")
+        if (host.isEmpty() || portStr.isEmpty() || user.isEmpty() || pass.isEmpty() || host.contains("Locked")) {
+            Toast.makeText(this, "Please fill valid SSH fields", Toast.LENGTH_SHORT).show()
+            appendLog("Error: Please fill valid SSH fields")
             return
         }
 
