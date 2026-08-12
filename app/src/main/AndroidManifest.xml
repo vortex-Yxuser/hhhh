@@ -16,10 +16,10 @@
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
-        <!-- AdMob Test App ID -->
+        <!-- Real AdMob App ID -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3343011771"/>
+            android:value="ca-app-pub-6988527982574142~9115517195"/>
 
         <activity
             android:name=".MainActivity"

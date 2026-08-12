@@ -15,9 +15,9 @@ object AdManager {
 
     private const val TAG = "YohanAds"
 
-    // استخدام معرفات اختبار AdMob الرسمية من جوجل لضمان ظهور الإعلانات فوراً حتى قبل الموافقة على الحساب
-    private const val APP_OPEN_AD_UNIT = "ca-app-pub-3940256099942544/3419835254"
-    private const val INTERSTITIAL_AD_UNIT = "ca-app-pub-3940256099942544/1033173712"
+    // Real AdMob Unit IDs provided by user
+    private const val APP_OPEN_AD_UNIT = "ca-app-pub-6988527982574142/4804737092"
+    private const val INTERSTITIAL_AD_UNIT = "ca-app-pub-6988527982574142/4098426012"
 
     private var appOpenAd: AppOpenAd? = null
     private var interstitialAd: InterstitialAd? = null
