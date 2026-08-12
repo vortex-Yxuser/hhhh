@@ -19,6 +19,7 @@ import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.Toolbar
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.button.MaterialButton
 import java.io.File
@@ -27,6 +28,7 @@ import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var toolbar: Toolbar
     private lateinit var etHost: EditText
     private lateinit var etPort: EditText
     private lateinit var etUser: EditText
@@ -146,6 +148,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        toolbar = findViewById(R.id.toolbar)
+        setSupportActionBar(toolbar)
+        supportActionBar?.setDisplayShowTitleEnabled(true)
+
         etHost = findViewById(R.id.etHost)
         etPort = findViewById(R.id.etPort)
         etUser = findViewById(R.id.etUser)
@@ -198,11 +204,18 @@ class MainActivity : AppCompatActivity() {
             appendLog("Logs cleared")
         }
 
+        val filter = IntentFilter(MyVpnService.ACTION_LOG)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(logReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(logReceiver, filter)
+        }
+
         AdManager.loadAppOpenAd(this)
         AdManager.loadInterstitial(this)
 
         appendLog("Yohan VPN Pro ready")
-        appendLog("Use top-right menu for Export, Import, and Reset")
+        appendLog("Tap top-right menu (...) for Export, Import, and Reset")
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -297,7 +310,6 @@ class MainActivity : AppCompatActivity() {
             val preset = spPreset.selectedItem.toString()
 
             val lockFlag = if (isLocked) "LOCKED" else "VISIBLE"
-            // Ensure password is fully stored and encrypted inside the config string
             val rawData = "YOHAN_PRO_CONFIG|v1|$lockFlag|$host|$port|$user|$pass|$preset"
             val encrypted = encryptString(rawData)
 
@@ -346,7 +358,7 @@ class MainActivity : AppCompatActivity() {
             hiddenHost = parts[3]
             hiddenPort = parts[4].toIntOrNull() ?: 22
             hiddenUser = parts[5]
-            hiddenPass = parts[6] // Password included
+            hiddenPass = parts[6]
             val preset = parts[7]
 
             if (lockFlag == "LOCKED") {
@@ -356,7 +368,7 @@ class MainActivity : AppCompatActivity() {
                 etUser.setText("******** (Locked)")
                 etPass.setText("********")
                 Toast.makeText(this, "Config imported (SSH details are locked by creator)", Toast.LENGTH_LONG).show()
-                appendLog("Config imported successfully [LOCKED mode with encrypted password]")
+                appendLog("Config imported successfully [LOCKED mode]")
             } else {
                 isConfigLocked = false
                 etHost.setText(hiddenHost)
@@ -483,17 +495,17 @@ class MainActivity : AppCompatActivity() {
         isConnected = connected
         if (connected) {
             btnToggle.text = "DISCONNECT"
-            btnToggle.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#DC2626"))
+            btnToggle.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FF453A"))
             tvStatus.text = "Connected"
-            tvStatus.setTextColor(android.graphics.Color.parseColor("#4ADE80"))
+            tvStatus.setTextColor(android.graphics.Color.parseColor("#32D74B"))
             
             if (startTime == 0L) startTime = System.currentTimeMillis()
             handler.post(timerRunnable)
         } else {
             btnToggle.text = "CONNECT"
-            btnToggle.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#7C4DFF"))
+            btnToggle.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#0A84FF"))
             tvStatus.text = "Disconnected"
-            tvStatus.setTextColor(android.graphics.Color.parseColor("#38BDF8"))
+            tvStatus.setTextColor(android.graphics.Color.parseColor("#FF453A"))
             tvTimer.text = "00:00:00"
             tvSpeed.text = "↓ 0 KB/s  ↑ 0 KB/s"
             startTime = 0L
