@@ -15,9 +15,9 @@ object AdManager {
 
     private const val TAG = "YohanAds"
 
-    // Real Ad Unit IDs
-    private const val APP_OPEN_AD_UNIT = "ca-app-pub-6988527982574142/4804737092"
-    private const val INTERSTITIAL_AD_UNIT = "ca-app-pub-6988527982574142/4098426012"
+    // استخدام معرفات اختبار AdMob الرسمية من جوجل لضمان ظهور الإعلانات فوراً حتى قبل الموافقة على الحساب
+    private const val APP_OPEN_AD_UNIT = "ca-app-pub-3940256099942544/3419835254"
+    private const val INTERSTITIAL_AD_UNIT = "ca-app-pub-3940256099942544/1033173712"
 
     private var appOpenAd: AppOpenAd? = null
     private var interstitialAd: InterstitialAd? = null
@@ -104,35 +104,31 @@ object AdManager {
                 override fun onAdFailedToLoad(error: LoadAdError) {
                     interstitialAd = null
                     isLoadingInterstitial = false
-                    Log.e(TAG, "Interstitial failed: ${error.message}")
+                    Log.e(TAG, "Interstitial Ad failed: ${error.message}")
                 }
             }
         )
     }
 
-    fun showInterstitialIfAvailable(activity: Activity, onDismissed: (() -> Unit)? = null) {
+    fun showInterstitial(activity: Activity, onClosed: () -> Unit) {
         val ad = interstitialAd
         if (ad == null) {
             loadInterstitial(activity)
-            onDismissed?.invoke()
+            onClosed()
             return
         }
 
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() {
                 interstitialAd = null
-                loadInterstitial(activity) // preload next
-                onDismissed?.invoke()
+                loadInterstitial(activity)
+                onClosed()
             }
 
             override fun onAdFailedToShowFullScreenContent(error: AdError) {
                 interstitialAd = null
                 loadInterstitial(activity)
-                onDismissed?.invoke()
-            }
-
-            override fun onAdShowedFullScreenContent() {
-                // ad is showing
+                onClosed()
             }
         }
 
