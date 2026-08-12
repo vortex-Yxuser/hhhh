@@ -7,6 +7,9 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 class MyVpnService : VpnService() {
@@ -27,6 +30,15 @@ class MyVpnService : VpnService() {
     private var tunnelManager: SshTunnelManager? = null
     private var workerThread: Thread? = null
     private val stopping = AtomicBoolean(false)
+
+    private fun timeStr(): String {
+        return SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -58,17 +70,28 @@ class MyVpnService : VpnService() {
 
         workerThread = Thread({
             try {
-                sendLog("▶ Starting Yohan VPN connection...")
+                isRunning = true
+                stopping.set(false)
+
+                // عرض معلومات الجهاز تماماً مثل DarkTunnel
+                val model = Build.MODEL ?: "Android"
+                val manufacturer = Build.MANUFACTURER ?: ""
+                val deviceName = if (model.startsWith(manufacturer, true)) model else "$manufacturer $model"
+                val androidVer = Build.VERSION.RELEASE ?: "14"
+                val sdkInt = Build.VERSION.SDK_INT
+                sendLog("Running on $deviceName [${timeStr()}]")
+                sendLog("(Android $androidVer) API $sdkInt. Version 1.0.26 Build 32")
+
                 val manager = SshTunnelManager(config, this) { log ->
                     updateNotification(log.take(60))
                     sendLog(log)
                 }
                 tunnelManager = manager
 
-                // 1. SSH
+                // 1. SSH Connection
                 manager.connect()
 
-                // 2. Local SOCKS
+                // 2. Local SOCKS5
                 manager.startSocksProxy()
 
                 // 3. TUN interface
@@ -76,8 +99,8 @@ class MyVpnService : VpnService() {
                     .setSession("Yohan-VPN")
                     .addAddress("10.8.0.2", 32)
                     .addRoute("0.0.0.0", 0)
-                    .addDnsServer("1.1.1.1")
-                    .addDnsServer("8.8.8.8")
+                    .addDnsServer("10.44.8.1")
+                    .addDnsServer("41.110.32.3")
                     .setMtu(config.mtu)
                     .setBlocking(true)
 
@@ -93,7 +116,6 @@ class MyVpnService : VpnService() {
                     stopTunnel("TUN failed")
                     return@Thread
                 }
-                sendLog("✓ TUN interface ready (fd=${tunInterface!!.fd})")
 
                 // 4. Write config for hev-socks5-tunnel
                 val yaml = File(filesDir, "tun2socks.yaml")
@@ -109,98 +131,104 @@ class MyVpnService : VpnService() {
                       task-stack-size: 81920
                     """.trimIndent()
                 )
-                sendLog("→ Starting tun2socks engine...")
 
-                // Catch Error (UnsatisfiedLinkError) as well as Exception
                 var started = false
                 try {
                     started = TProxyService.TProxyStartService(yaml.absolutePath, tunInterface!!.fd)
                 } catch (t: Throwable) {
-                    sendLog("✗ Native error: ${t.javaClass.simpleName}: ${t.message?.take(80)}")
+                    sendLog("✗ Native error: ${t.javaClass.simpleName}")
                     stopTunnel("Native crash prevented")
                     return@Thread
                 }
 
                 if (!started) {
-                    sendLog("✗ tun2socks returned false")
-                    stopTunnel("tun2socks failed")
+                    sendLog("✗ Failed to start tun2socks engine")
+                    stopTunnel("Engine start failed")
                     return@Thread
                 }
 
-                isRunning = true
-                sendLog("Connected")
-                updateNotification("Connected")
+                sendLog("DNS 10.44.8.1 [${timeStr()}]")
+                sendLog("DNS 41.110.32.3 [${timeStr()}]")
+                sendLog("Connected [${timeStr()}]")
+                updateNotification("Connected ✅")
 
             } catch (e: Exception) {
-                val msg = "✗ Connection failed: ${e.message?.take(120)}"
-                sendLog(msg)
-                updateNotification(msg)
+                val msg = e.message ?: "Connection error"
+                sendLog("Connection error: $msg [${timeStr()}]")
+                sendLog("Connection closed [${timeStr()}]")
                 stopTunnel(msg)
-            } catch (t: Throwable) {
-                sendLog("✗ Fatal: ${t.javaClass.simpleName}")
-                stopTunnel("Fatal error")
             }
-        }, "Yohan-VPN-Worker").apply {
-            isDaemon = false
-            priority = Thread.MAX_PRIORITY
-            start()
-        }
+        }, "VpnWorkerThread")
+
+        workerThread?.start()
     }
 
-    private fun stopTunnel(reason: String = "Stopped") {
-        if (!stopping.compareAndSet(false, true)) return
+    private fun stopTunnel(reason: String) {
+        if (stopping.getAndSet(true)) return
         isRunning = false
-        sendLog("○ $reason")
 
-        try { TProxyService.TProxyStopService() } catch (_: Throwable) {}
-        try { tunnelManager?.disconnect() } catch (_: Exception) {}
-        try { tunInterface?.close() } catch (_: Exception) {}
+        try {
+            TProxyService.TProxyStopService()
+        } catch (_: Exception) {}
+
+        try {
+            tunnelManager?.disconnect()
+        } catch (_: Exception) {}
+
+        try {
+            tunInterface?.close()
+        } catch (_: Exception) {}
 
         tunInterface = null
         tunnelManager = null
-        workerThread = null
+
+        sendLog("Connection closed [${timeStr()}]")
+        updateNotification("Disconnected")
 
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         } catch (_: Exception) {}
-        stopSelf()
-        stopping.set(false)
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Yohan VPN Service",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
+    }
+
+    private fun buildNotification(status: String): Notification {
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Yohan VPN")
+            .setContentText(status)
+            .setSmallIcon(android.R.drawable.ic_menu_upload)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun updateNotification(status: String) {
+        try {
+            val notification = buildNotification(status)
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.notify(NOTIF_ID, notification)
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
         stopTunnel("Service destroyed")
         super.onDestroy()
-    }
-
-    override fun onRevoke() {
-        stopTunnel("VPN revoked by system")
-        super.onRevoke()
-    }
-
-    private fun buildNotification(text: String): Notification {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID, "Yohan VPN", NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "VPN connection status"
-                setShowBadge(false)
-            }
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Yohan VPN")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-    }
-
-    private fun updateNotification(text: String) {
-        try {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm?.notify(NOTIF_ID, buildNotification(text))
-        } catch (_: Exception) {}
     }
 }
